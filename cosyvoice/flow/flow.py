@@ -234,31 +234,31 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
 
     @torch.inference_mode()
     def inference(self,
-                  token,
+                  token,                # tts text speech token, tts text 经过llm生成, shape 示例 [1,41]
                   token_len,
-                  prompt_token,
+                  prompt_token,         # prompt audio speech token, prompt audio 经过 speech tokenizer 生成， shape示例 [1,87]
                   prompt_token_len,
-                  prompt_feat,
+                  prompt_feat,          # prompt audio 经过 feat_extractor 提取 梅尔频谱
                   prompt_feat_len,
-                  embedding,
+                  embedding,            # 由prompt audio 经过campplus模型生成, shape [1,192]
                   streaming,
                   finalize):
         assert token.shape[0] == 1
         # xvec projection
         embedding = F.normalize(embedding, dim=1)
-        embedding = self.spk_embed_affine_layer(embedding)
+        embedding = self.spk_embed_affine_layer(embedding)      # shape [1,80]
 
         # concat text and prompt_text
         token, token_len = torch.concat([prompt_token, token], dim=1), prompt_token_len + token_len
         mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
-        token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        token = self.input_embedding(torch.clamp(token, min=0)) * mask      # shape [1,128, 512]
 
         # text encode
         if finalize is True:
             h, h_lengths = self.encoder(token, token_len, streaming=streaming)
         else:
-            token, context = token[:, :-self.pre_lookahead_len], token[:, -self.pre_lookahead_len:]
-            h, h_lengths = self.encoder(token, token_len, context=context, streaming=streaming)
+            token, context = token[:, :-self.pre_lookahead_len], token[:, -self.pre_lookahead_len:] # token shape [1,125,512], context shape [1,3,512]
+            h, h_lengths = self.encoder(token, token_len, context=context, streaming=streaming)     # h shape [1,250,512], h_lengths shape [1,1,250] 全为 true
         mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
         h = self.encoder_proj(h)
 

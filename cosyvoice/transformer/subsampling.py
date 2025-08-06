@@ -109,6 +109,7 @@ class LinearNoSubsampling(BaseSubsampling):
 
         """
         x = self.out(x)
+        print("LinearNoSubsampling,x.shape", x.shape, "offset",offset)
         x, pos_emb = self.pos_enc(x, offset)
         return x, pos_emb, x_mask
 

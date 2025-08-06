@@ -233,6 +233,7 @@ class EspnetRelPositionalEncoding(torch.nn.Module):
         # Suppose `i` means to the position of query vecotr and `j` means the
         # position of key vector. We use position relative positions when keys
         # are to the left (i>j) and negative relative positions otherwise (i<j).
+        print("EspnetRelPositionalEncoding extend_pe, x.size:",x.size())
         pe_positive = torch.zeros(x.size(1), self.d_model)
         pe_negative = torch.zeros(x.size(1), self.d_model)
         position = torch.arange(0, x.size(1), dtype=torch.float32).unsqueeze(1)
@@ -252,6 +253,7 @@ class EspnetRelPositionalEncoding(torch.nn.Module):
         pe_negative = pe_negative[1:].unsqueeze(0)
         pe = torch.cat([pe_positive, pe_negative], dim=1)
         self.pe = pe.to(device=x.device, dtype=x.dtype)
+        print("self.pe.shape",self.pe.shape)
 
     def forward(self, x: torch.Tensor, offset: Union[int, torch.Tensor] = 0) \
             -> Tuple[torch.Tensor, torch.Tensor]:
@@ -264,9 +266,11 @@ class EspnetRelPositionalEncoding(torch.nn.Module):
             torch.Tensor: Encoded tensor (batch, time, `*`).
 
         """
+        print("EspnetRelPositionalEncoding forward x.shape",x.shape)
         self.extend_pe(x)
         x = x * self.xscale
         pos_emb = self.position_encoding(size=x.size(1), offset=offset)
+        print("pos_emb shape:",pos_emb.shape)
         return self.dropout(x), self.dropout(pos_emb)
 
     def position_encoding(self,
@@ -289,6 +293,7 @@ class EspnetRelPositionalEncoding(torch.nn.Module):
         """
         # How to subscript a Union type:
         #   https://github.com/pytorch/pytorch/issues/69434
+        print("self.pe.size(1) // 2 - size - offset + 1: self.pe.size(1) // 2 + size + offset", self.pe.size(1) // 2 - size - offset + 1, self.pe.size(1) // 2 + size + offset)
         if isinstance(offset, int):
             pos_emb = self.pe[
                 :,

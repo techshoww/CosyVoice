@@ -276,11 +276,14 @@ class UpsampleConformerEncoder(torch.nn.Module):
         masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)
+        print("call embed 279,xs.shape",xs.shape)
         xs, pos_emb, masks = self.embed(xs, masks)
         if context.size(1) != 0:
             assert self.training is False, 'you have passed context, make sure that you are running inference mode'
             context_masks = torch.ones(1, 1, context.size(1)).to(masks)
+            print("call embed 284,context.shape",context.shape)
             context, _, _ = self.embed(context, context_masks, offset=xs.size(1))
+            print("flow encoder 286")
         mask_pad = masks  # (B, 1, T/subsample_rate)
         chunk_masks = add_optional_chunk_mask(xs, masks, False, False, 0, self.static_chunk_size if streaming is True else 0, -1)
         # lookahead + conformer encoder
@@ -293,6 +296,7 @@ class UpsampleConformerEncoder(torch.nn.Module):
         xs = xs.transpose(1, 2).contiguous()
         T = xs.size(1)
         masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
+        print("flow encoder 299 call up_embed xs.shape",xs.shape)
         xs, pos_emb, masks = self.up_embed(xs, masks)
         mask_pad = masks  # (B, 1, T/subsample_rate)
         chunk_masks = add_optional_chunk_mask(xs, masks, False, False, 0, self.static_chunk_size * self.up_layer.stride if streaming is True else 0, -1)
