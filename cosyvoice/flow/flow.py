@@ -238,7 +238,7 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
                   token_len,
                   prompt_token,         # prompt audio speech token, prompt audio 经过 speech tokenizer 生成， shape示例 [1,87]
                   prompt_token_len,
-                  prompt_feat,          # prompt audio 经过 feat_extractor 提取 梅尔频谱
+                  prompt_feat,          # prompt audio 经过 feat_extractor 提取 梅尔频谱 shape [1,174,80]
                   prompt_feat_len,
                   embedding,            # 由prompt audio 经过campplus模型生成, shape [1,192]
                   streaming,
@@ -259,16 +259,16 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         else:
             token, context = token[:, :-self.pre_lookahead_len], token[:, -self.pre_lookahead_len:] # token shape [1,125,512], context shape [1,3,512]
             h, h_lengths = self.encoder(token, token_len, context=context, streaming=streaming)     # h shape [1,250,512], h_lengths shape [1,1,250] 全为 true
-        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
-        h = self.encoder_proj(h)
+        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]                # mel_len1 = 174  mel_len2 = 76
+        h = self.encoder_proj(h)                                                                    # shape [1,250,80]
 
         # get conditions
-        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)
+        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)    # shape [1, 250, 80]    NLC
         conds[:, :mel_len1] = prompt_feat
-        conds = conds.transpose(1, 2)
+        conds = conds.transpose(1, 2)                                                                       # shape [1, 80, 250]    NCL
 
-        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
-        feat, _ = self.decoder(
+        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)                                  # shape [1,250] 全是 1.
+        feat, _ = self.decoder(                                                                             # feat shape [1,80,250]
             mu=h.transpose(1, 2).contiguous(),
             mask=mask.unsqueeze(1),
             spks=embedding,
@@ -276,6 +276,6 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
             n_timesteps=10,
             streaming=streaming
         )
-        feat = feat[:, :, mel_len1:]
+        feat = feat[:, :, mel_len1:]                                                                        # shape [1,80,76] 
         assert feat.shape[2] == mel_len2
-        return feat.float(), None
+        return feat.float(), None                                                                           # shape [1,80,76] 
