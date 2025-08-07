@@ -267,6 +267,8 @@ class CosyVoice2Model(CosyVoiceModel):
         self.llm_end_dict = {}
         self.hift_cache_dict = {}
 
+        self.max_infer_chunk_num = 3                # 用于固定shape 推理
+
     def load_jit(self, flow_encoder_model):
         flow_encoder = torch.jit.load(flow_encoder_model, map_location=self.device)
         self.flow.encoder = flow_encoder
@@ -284,6 +286,7 @@ class CosyVoice2Model(CosyVoiceModel):
 
     def token2wav(self, token, prompt_token, prompt_feat, embedding, token_offset, uuid, stream=False, finalize=False, speed=1.0):
         with torch.cuda.amp.autocast(self.fp16):
+            print("token.shape",token.shape)
             tts_mel, _ = self.flow.inference(token=token.to(self.device),
                                              token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(self.device),
                                              prompt_token=prompt_token.to(self.device),
@@ -293,7 +296,18 @@ class CosyVoice2Model(CosyVoiceModel):
                                              embedding=embedding.to(self.device),
                                              streaming=stream,
                                              finalize=finalize)
-        tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
+        print("tts_mel.shape",tts_mel.shape)
+        # tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
+        
+        if finalize:
+            # tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
+            neg_offset = token_offset * self.flow.token_mel_ratio - tts_mel.shape[2]        # 用来截取有效 tts_speech
+            tts_mel = tts_mel[:,:,-self.token_hop_len*self.flow.token_mel_ratio:]           # 保留最小chunk_size 
+        else:
+            start =  min( token_offset // self.token_hop_len, self.max_infer_chunk_num-1) * self.token_hop_len
+            tts_mel = tts_mel[:, :, start * self.flow.token_mel_ratio:]
+        print("token_offset", token_offset)
+        print("tts_mel.shape",tts_mel.shape)
         # append hift cache
         if self.hift_cache_dict[uuid] is not None:
             hift_cache_mel, hift_cache_source = self.hift_cache_dict[uuid]['mel'], self.hift_cache_dict[uuid]['source']
@@ -314,6 +328,8 @@ class CosyVoice2Model(CosyVoiceModel):
                 assert self.hift_cache_dict[uuid] is None, 'speed change only support non-stream inference mode'
                 tts_mel = F.interpolate(tts_mel, size=int(tts_mel.shape[2] / speed), mode='linear')
             tts_speech, tts_source = self.hift.inference(speech_feat=tts_mel, cache_source=hift_cache_source)
+            tts_speech = tts_speech[:, neg_offset*480:]
+            tts_source = tts_source[:,:, neg_offset*480:]
             if self.hift_cache_dict[uuid] is not None:
                 tts_speech = fade_in_out(tts_speech, self.hift_cache_dict[uuid]['speech'], self.speech_window)
         return tts_speech
@@ -335,12 +351,22 @@ class CosyVoice2Model(CosyVoiceModel):
         p.start()
         if stream is True:
             token_offset = 0
+            print("flow_prompt_speech_token.shape",flow_prompt_speech_token.shape)
+            prompt_token_len = flow_prompt_speech_token.shape[1]
+            prompt_token_align_len = (prompt_token_len//self.token_hop_len) * self.token_hop_len
+            flow_prompt_speech_token = flow_prompt_speech_token[:, 0:prompt_token_align_len]
+            prompt_speech_feat = prompt_speech_feat[:, 0:prompt_token_align_len*2]
+            print("flow_prompt_speech_token.shape",flow_prompt_speech_token.shape)
+
             prompt_token_pad = int(np.ceil(flow_prompt_speech_token.shape[1] / self.token_hop_len) * self.token_hop_len - flow_prompt_speech_token.shape[1])
             while True:
                 time.sleep(0.1)
                 this_token_hop_len = self.token_hop_len + prompt_token_pad if token_offset == 0 else self.token_hop_len
+                print("this_token_hop_len",this_token_hop_len)
                 if len(self.tts_speech_token_dict[this_uuid]) - token_offset >= this_token_hop_len + self.flow.pre_lookahead_len:
-                    this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid][:token_offset + this_token_hop_len + self.flow.pre_lookahead_len]).unsqueeze(dim=0)
+                    # this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid][:token_offset + this_token_hop_len + self.flow.pre_lookahead_len]).unsqueeze(dim=0)
+                    start = token_offset -  min( token_offset // self.token_hop_len, self.max_infer_chunk_num-1) * self.token_hop_len
+                    this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid][ start : token_offset + this_token_hop_len + self.flow.pre_lookahead_len]).unsqueeze(dim=0)
                     this_tts_speech = self.token2wav(token=this_tts_speech_token,
                                                      prompt_token=flow_prompt_speech_token,
                                                      prompt_feat=prompt_speech_feat,
@@ -356,11 +382,14 @@ class CosyVoice2Model(CosyVoiceModel):
             p.join()
             # deal with remain tokens, make sure inference remain token len equals token_hop_len when cache_speech is not None
             this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid]).unsqueeze(dim=0)
+            start = this_tts_speech_token.shape[1] -  min( this_tts_speech_token.shape[1] // self.token_hop_len, self.max_infer_chunk_num-1) * self.token_hop_len
+            this_tts_speech_token = this_tts_speech_token[:, start:]
+            print("final this_tts_speech_token",this_tts_speech_token.shape)
             this_tts_speech = self.token2wav(token=this_tts_speech_token,
                                              prompt_token=flow_prompt_speech_token,
                                              prompt_feat=prompt_speech_feat,
                                              embedding=flow_embedding,
-                                             token_offset=token_offset,
+                                             token_offset=token_offset - start,
                                              uuid=this_uuid,
                                              finalize=True)
             yield {'tts_speech': this_tts_speech.cpu()}
