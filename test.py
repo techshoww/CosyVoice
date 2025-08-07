@@ -9,7 +9,7 @@ cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load
 
 # NOTE if you want to reproduce the results on https://funaudiollm.github.io/cosyvoice2, please add text_frontend=False during inference
 # zero_shot usage
-# prompt_text = '希望你以后能够做的比我还好呦。'
+prompt_text = '希望你以后能够做的比我还好呦。'
 prompt_speech_16k = load_wav('./asset/zero_shot_prompt.wav', 16000)
 
 output = []
@@ -32,12 +32,12 @@ torchaudio.save("zero_shot_output_test.wav", output, cosyvoice.sample_rate)
 #     torchaudio.save('fine_grained_control_{}.wav'.format(i), j['tts_speech'], cosyvoice.sample_rate)
 
 # # instruct usage
-output = []
-for i, j in enumerate(cosyvoice.inference_instruct2('收到好友从远方寄来的生日礼物，那份意外的惊喜与深深的祝福让我心中充满了甜蜜的快乐，笑容如花儿般绽放。', '用四川话说这句话', prompt_speech_16k, stream=True)):
-    torchaudio.save('instruct_{}_test_sichuan.wav'.format(i), j['tts_speech'], cosyvoice.sample_rate)
-    output.append(j['tts_speech'])
-output = torch.cat(output, dim=1)
-torchaudio.save("zero_shot_output_test_sichuan.wav", output, cosyvoice.sample_rate)
+# output = []
+# for i, j in enumerate(cosyvoice.inference_instruct2('收到好友从远方寄来的生日礼物，那份意外的惊喜与深深的祝福让我心中充满了甜蜜的快乐，笑容如花儿般绽放。', '用四川话说这句话', prompt_speech_16k, stream=True)):
+#     torchaudio.save('instruct_{}_test_sichuan.wav'.format(i), j['tts_speech'], cosyvoice.sample_rate)
+#     output.append(j['tts_speech'])
+# output = torch.cat(output, dim=1)
+# torchaudio.save("zero_shot_output_test_sichuan.wav", output, cosyvoice.sample_rate)
 
 # bistream usage, you can use generator as input, this is useful when using text llm model as input
 # NOTE you should still have some basic sentence split logic because llm can not handle arbitrary sentence length

@@ -381,6 +381,7 @@ class CosyVoice2Model(CosyVoiceModel):
                     break
             p.join()
             # deal with remain tokens, make sure inference remain token len equals token_hop_len when cache_speech is not None
+            print("total speech token size:",len(self.tts_speech_token_dict[this_uuid]))
             this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid]).unsqueeze(dim=0)
             start = this_tts_speech_token.shape[1] -  min( this_tts_speech_token.shape[1] // self.token_hop_len, self.max_infer_chunk_num-1) * self.token_hop_len
             this_tts_speech_token = this_tts_speech_token[:, start:]
