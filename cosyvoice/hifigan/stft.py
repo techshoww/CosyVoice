@@ -67,40 +67,89 @@ class STFTISTFTReplacerManualFFT:
 
 
     def _stft(self, x):
-        """Manual STFT implementation for fixed parameters."""
-        print("x",x.shape)
+        """Manual STFT implementation for fixed parameters, using indexing instead of unfold."""
+        # print("x", x.shape)
         B, C, T = x.shape
         n_fft = self.n_fft
         hop_length = self.hop_length
-        window = self.window.to(x.device) # [1, 1, n_fft]
-        W_rfft = self.W_rfft.to(x.device) # [F, n_fft] complex64
+        window = self.window.to(x.device)  # [1, 1, n_fft]
+        W_rfft = self.W_rfft.to(x.device)  # [F, n_fft] complex64
 
         # 1. Padding for center=True (constant padding)
         pad_amount = self.pad_amount
-        x_padded = Fun.pad(x, (pad_amount, pad_amount), mode='constant', value=0) # [B, C, T + 2*pad]
+        x_padded = Fun.pad(x, (pad_amount, pad_amount), mode='constant', value=0)  # [B, C, T_padded]
+        T_padded = x_padded.shape[-1]
+        # print(f"After padding: {x_padded.shape}")
 
-        # 2. Unfold to create frames
-        frames = x_padded.unfold(-1, n_fft, hop_length) # [B, C, T_frames, n_fft]
+        # 2. Manually create frames using advanced indexing (replacing unfold)
+        # Calculate number of frames based on torch.stft's logic with center=True
+        # T_frames = 1 + L_original // hop_length
+        # Since we know L_original = 24000 and hop_length = 4, T_frames = 6001
+        # For a general padded length T_padded = T_original + 2 * pad_amount,
+        # T_original = T_padded - 2 * pad_amount = T_padded - n_fft (as pad_amount = n_fft // 2)
+        # So, T_frames = 1 + (T_padded - n_fft) // hop_length
+        # This matches the frame count we'd get if unfold covered the padded signal correctly
+        # to produce the same T_frames as torch.stft with center=True on the original signal.
+        T_padded = x_padded.shape[-1]
+        T_frames = 1 + (T_padded - n_fft) // hop_length
+        # print(f"Number of frames (T_frames): {T_frames}")
+
+        # --- CORRECTED APPROACH: Use advanced indexing ---
+        # We want to gather elements for each frame.
+        # Frame t takes elements from x_padded at indices [t*hop, t*hop+1, ..., t*hop+n_fft-1]
+        # We can create index tensors for each dimension of x_padded: [B, C, T_padded]
+
+        # Dimension 0 (Batch): indices are 0, 1, ..., B-1, repeated for all C and n_fft elements in a frame
+        batch_indices = torch.arange(B, device=x.device).view(B, 1, 1, 1) # [B, 1, 1, 1]
+        batch_indices = batch_indices.expand(B, C, T_frames, n_fft)      # [B, C, T_frames, n_fft]
+
+        # Dimension 1 (Channel): indices are 0, 1, ..., C-1, repeated for all B and n_fft elements in a frame
+        channel_indices = torch.arange(C, device=x.device).view(1, C, 1, 1) # [1, C, 1, 1]
+        channel_indices = channel_indices.expand(B, C, T_frames, n_fft)    # [B, C, T_frames, n_fft]
+
+        # Dimension 2 (Time): indices are [t*hop, t*hop+1, ..., t*hop+n_fft-1] for each frame t
+        # Create base offsets for each frame: [0, hop, 2*hop, ..., (T_frames-1)*hop]
+        frame_starts = torch.arange(T_frames, device=x.device) * hop_length # [T_frames]
+        # Create offsets within a window: [0, 1, 2, ..., n_fft-1]
+        window_offsets = torch.arange(n_fft, device=x.device)              # [n_fft]
+        # Combine them to get indices for the time dimension: [T_frames, n_fft]
+        # Add a dimension to frame_starts to allow broadcasting: [T_frames, 1] + [n_fft] -> [T_frames, n_fft]
+        time_indices_base = frame_starts.view(T_frames, 1) + window_offsets # [T_frames, n_fft]
+        # Expand to match batch and channel dimensions: [1, 1, T_frames, n_fft] -> [B, C, T_frames, n_fft]
+        time_indices = time_indices_base.unsqueeze(0).unsqueeze(0).expand(B, C, T_frames, n_fft) # [B, C, T_frames, n_fft]
+
+        # Now use advanced indexing to gather the frames
+        # x_padded: [B, C, T_padded]
+        # batch_indices, channel_indices, time_indices: [B, C, T_frames, n_fft]
+        frames = x_padded[batch_indices, channel_indices, time_indices] # [B, C, T_frames, n_fft]
+        # print(f"Frames shape (after manual indexing): {frames.shape}")
+        # --- END CORRECTED APPROACH ---
 
         # 3. Apply window (broadcasting)
-        windowed_frames = frames * window # [B, C, T_frames, n_fft]
+        # Ensure window has the correct shape for broadcasting [1, 1, 1, n_fft]
+        window_for_broadcast = window.view(1, 1, 1, n_fft) # [1, 1, 1, n_fft]
+        windowed_frames = frames * window_for_broadcast  # [B, C, T_frames, n_fft]
+        # print(f"Windowed frames shape: {windowed_frames.shape}")
 
         # 4. Apply manual RFFT using precomputed DFT matrix
-        BCT_frames = B * C * frames.shape[2]
-        windowed_frames_flat = windowed_frames.view(BCT_frames, n_fft) # [B*C*T_frames, n_fft] (real)
-        windowed_frames_flat_complex = torch.complex(windowed_frames_flat, torch.zeros_like(windowed_frames_flat)) # [B*C*T_frames, n_fft] (complex)
-        stft_flat = torch.matmul(windowed_frames_flat_complex, W_rfft.t()) # [B*C*T_frames, F] (complex)
-        stft_result = stft_flat.view(B, C, frames.shape[2], n_fft // 2 + 1) # [B, C, T_frames, F] (complex)
+        BCT_frames = B * C * T_frames
+        windowed_frames_flat = windowed_frames.view(BCT_frames, n_fft)  # [B*C*T_frames, n_fft] (real)
+        windowed_frames_flat_complex = torch.complex(windowed_frames_flat, torch.zeros_like(windowed_frames_flat))  # [B*C*T_frames, n_fft] (complex)
+        stft_flat = torch.matmul(windowed_frames_flat_complex, W_rfft.t())  # [B*C*T_frames, F] (complex)
+        stft_result = stft_flat.view(B, C, T_frames, n_fft // 2 + 1)  # [B, C, T_frames, F] (complex)
+        # print(f"STFT result shape (before transpose): {stft_result.shape}")
 
         # 5. Transpose to match torch.stft output format [B, C, F, T] and squeeze channel
-        stft_result = stft_result.transpose(-1, -2) # [B, C, F, T_frames] (complex)
-        stft_result_squeezed = stft_result.squeeze(1) # [B, F, T_frames] (complex)
+        stft_result = stft_result.transpose(-1, -2)  # [B, C, F, T_frames] (complex)
+        stft_result_squeezed = stft_result.squeeze(1)  # [B, F, T_frames] (complex)
+        # print(f"STFT result shape (final): {stft_result_squeezed.shape}")
 
         # 6. Separate real and imaginary parts
-        real_part = stft_result_squeezed.real # [B, F, T_frames] (real)
-        imag_part = stft_result_squeezed.imag # [B, F, T_frames] (real)
+        real_part = stft_result_squeezed.real  # [B, F, T_frames] (real)
+        imag_part = stft_result_squeezed.imag  # [B, F, T_frames] (real)
 
         return real_part, imag_part
+
 
     def _istft(self, magnitude, phase):
         """
