@@ -32,7 +32,7 @@ from torch.distributions.uniform import Uniform
 from cosyvoice.transformer.activation import Snake
 from cosyvoice.utils.common import get_padding
 from cosyvoice.utils.common import init_weights
-
+from cosyvoice.hifigan.stft import STFTISTFTReplacerManualFFT
 
 """hifigan based generator implementation.
 
@@ -486,6 +486,7 @@ class HiFTGenerator(nn.Module):
         self.reflection_pad = nn.ReflectionPad1d((1, 0))
         self.stft_window = torch.from_numpy(get_window("hann", istft_params["n_fft"], fftbins=True).astype(np.float32))
         self.f0_predictor = f0_predictor
+        self.manualfft = STFTISTFTReplacerManualFFT(istft_params["n_fft"], istft_params["hop_len"], istft_params["n_fft"], self.stft_window)
 
     def remove_weight_norm(self):
         print('Removing weight norm...')
@@ -501,24 +502,26 @@ class HiFTGenerator(nn.Module):
         for l in self.source_resblocks:
             l.remove_weight_norm()
 
-    def _stft(self, x):
-        spec = torch.stft(
-            x,
-            self.istft_params["n_fft"], self.istft_params["hop_len"], self.istft_params["n_fft"], window=self.stft_window.to(x.device),
-            return_complex=True)
-        spec = torch.view_as_real(spec)  # [B, F, TT, 2]
-        return spec[..., 0], spec[..., 1]
+    # def _stft(self, x):
+    #     spec = torch.stft(
+    #         x,
+    #         self.istft_params["n_fft"], self.istft_params["hop_len"], self.istft_params["n_fft"], window=self.stft_window.to(x.device),
+    #         return_complex=True)
+    #     spec = torch.view_as_real(spec)  # [B, F, TT, 2]
+    #     return spec[..., 0], spec[..., 1]
 
-    def _istft(self, magnitude, phase):
-        magnitude = torch.clip(magnitude, max=1e2)
-        real = magnitude * torch.cos(phase)
-        img = magnitude * torch.sin(phase)
-        inverse_transform = torch.istft(torch.complex(real, img), self.istft_params["n_fft"], self.istft_params["hop_len"],
-                                        self.istft_params["n_fft"], window=self.stft_window.to(magnitude.device))
-        return inverse_transform
+    # def _istft(self, magnitude, phase):
+    #     magnitude = torch.clip(magnitude, max=1e2)
+    #     real = magnitude * torch.cos(phase)
+    #     img = magnitude * torch.sin(phase)
+    #     inverse_transform = torch.istft(torch.complex(real, img), self.istft_params["n_fft"], self.istft_params["hop_len"],
+    #                                     self.istft_params["n_fft"], window=self.stft_window.to(magnitude.device))
+    #     return inverse_transform
 
     def decode(self, x: torch.Tensor, s: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
-        s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
+        # s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
+        self.manualfft.target_length = s.shape[2]
+        s_stft_real, s_stft_imag = self.manualfft._stft(s)
         s_stft = torch.cat([s_stft_real, s_stft_imag], dim=1)
 
         x = self.conv_pre(x)
@@ -547,7 +550,8 @@ class HiFTGenerator(nn.Module):
         magnitude = torch.exp(x[:, :self.istft_params["n_fft"] // 2 + 1, :])
         phase = torch.sin(x[:, self.istft_params["n_fft"] // 2 + 1:, :])  # actually, sin is redundancy
 
-        x = self._istft(magnitude, phase)
+        # x = self._istft(magnitude, phase)
+        x = self.manualfft._istft(magnitude, phase)
         x = torch.clamp(x, -self.audio_limit, self.audio_limit)
         return x
 
