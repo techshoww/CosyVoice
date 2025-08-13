@@ -83,7 +83,7 @@ class STFTISTFTReplacerManualFFT:
 
         # 1. Padding for center=True (constant padding)
         pad_amount = self.pad_amount
-        x_padded = Fun.pad(x, (pad_amount, pad_amount), mode='constant', value=0)  # [B, C, T_padded]
+        x_padded = Fun.pad(x, (pad_amount, pad_amount), mode='reflect')  # [B, C, T_padded = 24000 + 16 = 24016]
         T_padded = x_padded.shape[-1]
         # print(f"After padding: {x_padded.shape}")
 
