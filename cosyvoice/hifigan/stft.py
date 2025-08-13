@@ -70,30 +70,53 @@ class STFTISTFTReplacerManualFFT:
 
 
     def _stft(self, x):
-        """Manual STFT implementation for fixed parameters, using indexing instead of unfold, avoiding torch.complex."""
+        """
+        Manual STFT implementation for fixed parameters, matching torch.stft more closely.
+        Uses reflect padding and manual indexing instead of unfold.
+        Input x: [B, C, T] = [1, 1, 24000] (assuming fixed shape)
+        Output: real_part [B, F, T_frames], imag_part [B, F, T_frames]
+                where F = n_fft // 2 + 1 = 9, T_frames = 6001 (for center=True, L=24000, hop=4)
+        """
         # print("x", x.shape)
         B, C, T = x.shape
+        if not (B == 1 and C == 1 and T == 24000):
+            # Or handle dynamic shapes if needed, but logic is based on fixed params
+            print(f"Warning: Expected input shape [1, 1, 24000], got {x.shape}. Assuming parameters match.")
+            
+
         n_fft = self.n_fft
         hop_length = self.hop_length
+        # Ensure window is on the correct device and has shape [1, 1, n_fft]
         window = self.window.to(x.device)  # [1, 1, n_fft]
-        # W_rfft = self.W_rfft.to(x.device)  # [F, n_fft] complex64
-        # Precompute real and imaginary parts of the DFT matrix for manual multiplication
-        W_rfft_real = self.W_rfft_real.to(x.device) # [F, n_fft] (real)
-        W_rfft_imag = self.W_rfft_imag.to(x.device) # [F, n_fft] (real)
+        # Ensure W_rfft is on the correct device
+        W_rfft = self.W_rfft.to(x.device)  # [F, n_fft] complex64
 
-        # 1. Padding for center=True (constant padding)
-        pad_amount = self.pad_amount
-        x_padded = Fun.pad(x, (pad_amount, pad_amount), mode='constant', value=0)  # [B, C, T_padded]
+        # 1. Padding for center=True (using reflect padding to match torch.stft default)
+        pad_amount = n_fft // 2
+        # torch.stft with center=True and pad_mode='reflect' (default) pads like this:
+        # pad_left = pad_amount, pad_right = pad_amount
+        x_padded = Fun.pad(x, (pad_amount, pad_amount), mode='reflect')  # [B, C, T_padded = 24000 + 16 = 24016]
         T_padded = x_padded.shape[-1]
-        # print(f"After padding: {x_padded.shape}")
+        # print(f"After reflect padding: {x_padded.shape}")
 
         # 2. Manually create frames using advanced indexing (replacing unfold)
         # Calculate number of frames based on torch.stft's logic with center=True
-        T_padded = x_padded.shape[-1]
-        T_frames = 1 + (T_padded - n_fft) // hop_length
+        # T_frames = 1 + L_original // hop_length (This is the formula torch.stft uses for center=True output length)
+        # For L_original = 24000, hop_length = 4: T_frames = 1 + 24000 // 4 = 6001
+        # We need to generate 6001 frames from x_padded [B, C, 24016] with window 16 and hop 4.
+        # Frame starts: 0, 4, 8, ..., (6001-1)*4 = 24000. Last frame is [24000..24015]. Fits in x_padded.
+        # General formula for number of frames when extracting from padded signal:
+        # T_frames = 1 + (T_padded - n_fft) // hop_length (if (T_padded - n_fft) is divisible by hop_length)
+        # Let's use the direct calculation based on original signal length logic for clarity and match.
+        # Since T_original=24000 is fixed in problem, T_frames is fixed.
+        # T_frames = 1 + T // hop_length # This matches torch.stft for center=True
+        # But to be general with padding logic: T_padded = T + 2 * pad_amount = T + n_fft (as pad_amount=n_fft//2)
+        # So, T = T_padded - n_fft. Therefore, T_frames = 1 + (T_padded - n_fft) // hop_length.
+        # This should give the same count as torch.stft's formula for the original T.
+        T_frames = 1 + (T_padded - n_fft) // hop_length # Should be 6001
         # print(f"Number of frames (T_frames): {T_frames}")
 
-        # --- Use advanced indexing ---
+        # --- Use advanced indexing to simulate unfold ---
         # We want to gather elements for each frame.
         # Frame t takes elements from x_padded at indices [t*hop, t*hop+1, ..., t*hop+n_fft-1]
         # We can create index tensors for each dimension of x_padded: [B, C, T_padded]
@@ -122,76 +145,70 @@ class STFTISTFTReplacerManualFFT:
         # batch_indices, channel_indices, time_indices: [B, C, T_frames, n_fft]
         frames = x_padded[batch_indices, channel_indices, time_indices] # [B, C, T_frames, n_fft]
         # print(f"Frames shape (after manual indexing): {frames.shape}")
-        # --- END manual unfold ---
+        # --- END manual unfold simulation ---
 
         # 3. Apply window (broadcasting)
-        # Ensure window has the correct shape for broadcasting [1, 1, 1, n_fft]
-        window_for_broadcast = window.view(1, 1, 1, n_fft) # [1, 1, 1, n_fft]
-        windowed_frames = frames * window_for_broadcast  # [B, C, T_frames, n_fft]
+        # window: [1, 1, 1, n_fft]
+        # frames: [B, C, T_frames, n_fft]
+        windowed_frames = frames * window  # [B, C, T_frames, n_fft]
         # print(f"Windowed frames shape: {windowed_frames.shape}")
 
-        # 4. Apply manual RFFT using precomputed DFT matrix (WITHOUT torch.complex)
-        # windowed_frames_flat: [B*C*T_frames, n_fft] (real)
-        # W_rfft: [F, n_fft] (complex) -> Precomputed as self.W_rfft = torch.exp(-1j * ...)
-        # We need to compute matmul(windowed_frames_flat_complex, W_rfft.t())
-        # where windowed_frames_flat_complex is windowed_frames_flat + 0j.
-        # This is a complex matrix multiplication: (a + 0j) * (c + dj) = (a*c) + j(a*d)
-        # We avoid creating the complex tensor and compute real/imag parts directly.
-        BCT_frames = B * C * T_frames
-        windowed_frames_flat = windowed_frames.view(BCT_frames, n_fft)  # [BCT, n_fft] (real)
-
-        # Precompute real and imaginary parts of the DFT matrix W_rfft
-        # W_rfft[k, n] = exp(-2j * pi * k * n / N)
-        # self.W_rfft is already computed in __init__ as complex: torch.exp(-2j * pi * k * n / N)
-        # For manual multiplication, extract real and imag parts.
-        # It's more efficient to do this once in __init__, let's assume we have W_rfft_real and W_rfft_imag
-        # Or compute them here from self.W_rfft if not stored.
-        # Let's compute them here for clarity, assuming self.W_rfft is complex.
-        W_rfft_full = self.W_rfft.to(x.device)  # [F, n_fft] complex64
-        W_rfft_real = W_rfft_full.real         # [F, n_fft] (real)
-        W_rfft_imag = W_rfft_full.imag         # [F, n_fft] (real)
-
+        # 4. Apply manual RFFT using precomputed DFT matrix (WITHOUT torch.complex internally)
+        # windowed_frames: [B, C, T_frames, n_fft] (real)
+        # W_rfft: [F, n_fft] (complex) -> Assume precomputed self.W_rfft_real and self.W_rfft_imag
+        # We want: [B, C, T_frames, F] (complex)
+        BCT_frames = B * C * frames.shape[2]
+        windowed_frames_flat = windowed_frames.view(BCT_frames, n_fft) # [B*C*T_frames, n_fft] (real)
+        
+        # --- Manual Complex Matrix Multiplication ---
         # Reshape windowed_frames_flat for matrix multiplication: [BCT, 1, n_fft]
         windowed_frames_flat_mm = windowed_frames_flat.unsqueeze(1) # [BCT, 1, n_fft]
-
+        
+        # Precompute real and imaginary parts of the DFT matrix W_rfft if not done in __init__
+        # It's more efficient to do this once in __init__
+        # Assuming they are available as attributes (add to __init__ if needed):
+        # self.W_rfft_real = self.W_rfft.real
+        # self.W_rfft_imag = self.W_rfft.imag
+        W_rfft_real = self.W_rfft_real.to(x.device) # [F, n_fft] (real)
+        W_rfft_imag = self.W_rfft_imag.to(x.device) # [F, n_fft] (real)
+        
         # Perform the real part of the complex multiplication: (a + 0j) * (c + dj) = (a*c) + j(a*d)
         # Real part of result: a * c - 0 * d = a * c
         # Imaginary part of result: a * d + 0 * c = a * d
-        # We compute both parts.
         # Matrix multiply [BCT, 1, n_fft] @ [n_fft, F] -> [BCT, 1, F] -> squeeze(1) -> [BCT, F]
-        # Multiply windowed_frames_flat (real) with W_rfft_real (real) for the real part of STFT
         stft_result_real_flat = torch.matmul(windowed_frames_flat_mm, W_rfft_real.t()).squeeze(1) # [BCT, F]
-        # Multiply windowed_frames_flat (real) with W_rfft_imag (imag) for the imag part of STFT
         stft_result_imag_flat = torch.matmul(windowed_frames_flat_mm, W_rfft_imag.t()).squeeze(1) # [BCT, F]
 
-        # Combine real and imaginary parts into the final STFT result shape
-        # Reshape back to [B, C, T_frames, F] for both real and imaginary parts
-        stft_result_real = stft_result_real_flat.view(B, C, T_frames, n_fft // 2 + 1) # [B, C, T_frames, F]
-        stft_result_imag = stft_result_imag_flat.view(B, C, T_frames, n_fft // 2 + 1) # [B, C, T_frames, F]
+        # Combine real and imaginary parts into a complex tensor for subsequent ops
+        # (Alternatively, keep them separate and adjust transpose/view/real/imag calls below)
+        stft_flat_complex = torch.complex(stft_result_real_flat, stft_result_imag_flat) # [BCT, F] (complex)
+        # --- END Manual Complex Matrix Multiplication ---
+        # --- End Option 1 ---
+        
+        # --- Option 2: Manual complex multiplication (avoids torch.complex internally) ---
+        # Uncomment this block and comment out Option 1 block above to use this.
+        # Requires precomputing W_rfft_real and W_rfft_imag in __init__ or here.
+        # W_rfft_real = W_rfft.real # [F, n_fft]
+        # W_rfft_imag = W_rfft.imag # [F, n_fft]
+        # windowed_frames_flat_mm = windowed_frames_flat.unsqueeze(1) # [BCT, 1, n_fft]
+        # # Real part of (real_input + 0j) * (W_real + j*W_imag) = real_input * W_real
+        # stft_real_flat = torch.matmul(windowed_frames_flat_mm, W_rfft_real.t()).squeeze(1) # [BCT, F]
+        # # Imag part of (real_input + 0j) * (W_real + j*W_imag) = real_input * W_imag
+        # stft_imag_flat = torch.matmul(windowed_frames_flat_mm, W_rfft_imag.t()).squeeze(1) # [BCT, F]
+        # stft_flat_complex = torch.complex(stft_real_flat, stft_imag_flat) # [BCT, F] (complex)
+        # --- End Option 2 ---
+
+        stft_result_complex = stft_flat_complex.view(B, C, T_frames, n_fft // 2 + 1)  # [B, C, T_frames, F] (complex)
+        # print(f"STFT result shape (before transpose): {stft_result_complex.shape}")
 
         # 5. Transpose to match torch.stft output format [B, C, F, T] and squeeze channel
-        # We need to combine real/imag for transpose/squeeze or do them separately.
-        # It's simpler to temporarily create a complex tensor for structural ops if allowed,
-        # but since the goal is no torch.complex, let's do transpose/squeeze on real/imag separately.
-        stft_result_real = stft_result_real.transpose(-1, -2)  # [B, C, F, T_frames] (real)
-        stft_result_imag = stft_result_imag.transpose(-1, -2)  # [B, C, F, T_frames] (real)
-        stft_result_squeezed_real = stft_result_real.squeeze(1)  # [B, F, T_frames] (real)
-        stft_result_squeezed_imag = stft_result_imag.squeeze(1)  # [B, F, T_frames] (real)
+        stft_result_complex = stft_result_complex.transpose(-1, -2)  # [B, C, F, T_frames] (complex)
+        stft_result_squeezed_complex = stft_result_complex.squeeze(1)  # [B, F, T_frames] (complex)
+        # print(f"STFT result shape (final): {stft_result_squeezed_complex.shape}")
 
-        # 6. Separate real and imaginary parts (already separated)
-        real_part = stft_result_squeezed_real  # [B, F, T_frames] (real)
-        imag_part = stft_result_squeezed_imag  # [B, F, T_frames] (real)
-
-
-        # --- Alternative: Keep real/imag completely separate throughout (more cumbersome) ---
-        # If we want to avoid creating the temporary complex tensor:
-        # stft_result_real = stft_result_real.transpose(-1, -2) # [B, C, F, T_frames]
-        # stft_result_imag = stft_result_imag.transpose(-1, -2) # [B, C, F, T_frames]
-        # stft_result_squeezed_real = stft_result_real.squeeze(1) # [B, F, T_frames]
-        # stft_result_squeezed_imag = stft_result_imag.squeeze(1) # [B, F, T_frames]
-        # real_part = stft_result_squeezed_real
-        # imag_part = stft_result_squeezed_imag
-        # --- END Alternative ---
+        # 6. Separate real and imaginary parts for output
+        real_part = stft_result_squeezed_complex.real  # [B, F, T_frames] (real)
+        imag_part = stft_result_squeezed_complex.imag  # [B, F, T_frames] (real)
 
         return real_part, imag_part
 
