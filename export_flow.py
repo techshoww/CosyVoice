@@ -42,7 +42,8 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 flow = cosyvoice.model.flow 
 flow.forward = flow.inference_export
 
-token = torch.ones([1,103], dtype=torch.int32)
+speech_token_len = 50
+token = torch.ones([1,speech_token_len], dtype=torch.int32)                          # 28 53 78 78 78 ... 50
 token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(device)
 
 prompt_token = torch.ones([1,75], dtype=torch.int32)
@@ -54,7 +55,7 @@ prompt_feat_len=torch.tensor([prompt_feat.shape[1]], dtype=torch.int32).to(devic
 
 embedding = torch.ones([1,192], dtype=torch.float32)
 
-finalize = False
+finalize = True
 
 
 token = token.to(device)
@@ -65,6 +66,9 @@ embedding = embedding.to(device)
 inputs = (token, token_len, prompt_token, prompt_token_len, prompt_feat, prompt_feat_len, embedding, finalize)
 input_names = ["token", "token_len", "prompt_token", "prompt_token_len", "prompt_feat", "prompt_feat_len", "embedding", "finalize"]
 output_names = ["mel"]
-onnx_output = "flow_103.onnx"
+if not finalize:
+    onnx_output = f"flow_{speech_token_len}.onnx"
+else:
+    onnx_output = f"flow_{speech_token_len}_final.onnx"
 
 export_onnx(flow, inputs, input_names, output_names, onnx_output)

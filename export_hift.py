@@ -42,12 +42,20 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 hift = cosyvoice.model.hift 
 hift.forward = hift.inference
 
-mel = torch.ones([1,80,50], dtype=torch.float32).to(device)
-hift_cache_source = torch.ones([1,1,3840],dtype=torch.float32).to(device)
+first = True 
+mel_len = 50
+mel = torch.ones([1,80,mel_len], dtype=torch.float32).to(device)
+if not first:
+    hift_cache_source = torch.ones([1,1,3840],dtype=torch.float32).to(device)
+else:
+    hift_cache_source = torch.zeros(1, 1, 0).to(device)
 
 inputs = (mel, hift_cache_source)
 input_names = ["mel", "hift_cache_source"]
 output_names = ["audio"]
-onnx_output = "hift.onnx"
+if not first:
+    onnx_output = f"hift_{mel_len}.onnx"
+else:
+    onnx_output = f"hift_{mel_len}_first.onnx"
 
 export_onnx(hift, inputs, input_names, output_names, onnx_output)

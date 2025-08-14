@@ -1,0 +1,30 @@
+{
+  "model_type": "ONNX",
+  "npu_mode": "NPU3",
+  "quant": {
+    "input_configs": [
+      {
+        "tensor_name": "DEFAULT",
+        "calibration_dataset": "s3://npu-ci/data/data.zip"
+      }
+    ],
+    "calibration_method": "MinMax",
+    "precision_analysis": true,
+    "precision_analysis_method": "PerLayer",
+    "precision_analysis_mode": "NPUBackend",
+    "conv_bias_data_type": "FP32",
+    "enable_smooth_quant": false,
+	  "disable_auto_refine_scale": true,
+    "layer_configs":  [
+      {
+        "start_tensor_names": ["DEFAULT"], 
+        "end_tensor_names": ["DEFAULT"], 
+        "data_type": "U16"
+      }
+    ]
+  },
+
+  "compiler": {
+    "npu_perf": true
+  }
+}
