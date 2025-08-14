@@ -54,7 +54,7 @@ class STFTISTFTReplacerManualFFT(torch.nn.Module):
         # We assume window is 1D [win_length] and win_length == n_fft
         self.window = window.view(1, 1, -1) # Shape: [1, 1, n_fft]
 
-        self.pad_mode = "reflect"
+        self.pad_mode = "constant" #"reflect"
         # self.register_buffer('padding_zero', torch.zeros(1, 1, self.n_fft//2, dtype=torch.float32))
         self.padding_zero = torch.zeros(1, 1, self.n_fft//2, dtype=torch.float32)
         
@@ -110,7 +110,7 @@ class STFTISTFTReplacerManualFFT(torch.nn.Module):
     def _pad_input(self, x):
         if self.pad_mode == 'reflect':
             return torch.nn.functional.pad(x, (self.n_fft//2, self.n_fft//2), mode='reflect')
-        return torch.cat((self.padding_zero, x, self.padding_zero), dim=-1)
+        return torch.cat((self.padding_zero.to(x.device), x, self.padding_zero.to(x.device)), dim=-1)
 
     def _stft(self, x):
         """Manual STFT implementation for fixed parameters, using indexing instead of unfold, avoiding torch.complex."""

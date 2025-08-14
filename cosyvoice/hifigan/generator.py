@@ -17,6 +17,7 @@
 from typing import Dict, Optional, List
 import numpy as np
 from scipy.signal import get_window
+import onnxruntime as ort
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -267,9 +268,9 @@ class SineGen2(torch.nn.Module):
         rad_values = (f0_values / self.sampling_rate) % 1
 
         # initial phase noise (no noise for fundamental component)
-        rand_ini = torch.rand(f0_values.shape[0], f0_values.shape[2], device=f0_values.device)
-        rand_ini[:, 0] = 0
-        rad_values[:, 0, :] = rad_values[:, 0, :] + rand_ini
+        # rand_ini = torch.rand(f0_values.shape[0], f0_values.shape[2], device=f0_values.device)
+        # rand_ini[:, 0] = 0
+        # rad_values[:, 0, :] = rad_values[:, 0, :] + rand_ini
 
         # instantanouse phase sine[t] = sin(2*pi \sum_i=1 ^{t} rad)
         if not self.flag_for_pulse:
@@ -330,14 +331,16 @@ class SineGen2(torch.nn.Module):
         # noise: for unvoiced should be similar to sine_amp
         #        std = self.sine_amp/3 -> max value ~ self.sine_amp
         # .       for voiced regions is self.noise_std
-        noise_amp = uv * self.noise_std + (1 - uv) * self.sine_amp / 3
-        noise = noise_amp * torch.randn_like(sine_waves)
+        # noise_amp = uv * self.noise_std + (1 - uv) * self.sine_amp / 3
+        # noise = noise_amp * torch.randn_like(sine_waves)
 
-        # first: set the unvoiced part to 0 by uv
-        # then: additive noise
-        sine_waves = sine_waves * uv + noise
-        return sine_waves, uv, noise
+        # # first: set the unvoiced part to 0 by uv
+        # # then: additive noise
+        # sine_waves = sine_waves * uv + noise
+        # return sine_waves, uv, noise
 
+        sine_waves = sine_waves * uv
+        return sine_waves, uv, 0
 
 class SourceModuleHnNSF2(torch.nn.Module):
     """ SourceModule for hn-nsf
@@ -483,10 +486,17 @@ class HiFTGenerator(nn.Module):
         self.conv_post = weight_norm(Conv1d(ch, istft_params["n_fft"] + 2, 7, 1, padding=3))
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
-        self.reflection_pad = nn.ReflectionPad1d((1, 0))
+        # self.reflection_pad = nn.ReflectionPad1d((1, 0))
+        self.reflection_pad = nn.ConstantPad1d((1,0), 0.)
         self.stft_window = torch.from_numpy(get_window("hann", istft_params["n_fft"], fftbins=True).astype(np.float32))
         self.f0_predictor = f0_predictor
         self.manualfft = STFTISTFTReplacerManualFFT(istft_params["n_fft"], istft_params["hop_len"], istft_params["n_fft"], self.stft_window)
+
+        # self.stft_24000 = ort.InferenceSession("stft_B_24000.onnx")
+        # self.stft_27840 = ort.InferenceSession("stft_B_27840.onnx")
+
+        # self.istft_24000 = ort.InferenceSession("istft_B_24000.onnx")
+        # self.istft_27840 = ort.InferenceSession("istft_B_27840.onnx")
 
     def remove_weight_norm(self):
         print('Removing weight norm...')
@@ -518,10 +528,49 @@ class HiFTGenerator(nn.Module):
     #                                     self.istft_params["n_fft"], window=self.stft_window.to(magnitude.device))
     #     return inverse_transform
 
+    # def _stft_onnx(self, x):
+    #     device = x.device
+    #     if x.shape[2] == 24000:
+    #         sess = self.stft_24000 
+    #     elif x.shape[2] == 27840:
+    #         sess = self.stft_27840
+    #     else:
+    #         raise NotImplementedError 
+        
+    #     ort_r, ort_i = sess.run(None, {sess.get_inputs()[0].name: x.cpu().numpy()})
+
+    #     ort_r = torch.from_numpy(ort_r).to(device)
+    #     ort_i = torch.from_numpy(ort_i).to(device)
+
+    #     return ort_r, ort_i 
+
+
+    # def _istft_onnx(self, magnitude, phase):
+    #     device = magnitude.device
+    #     if magnitude.shape[2] == 6001:
+    #         sess = self.istft_24000
+    #     elif magnitude.shape[2] == 6961:
+    #         sess = self.istft_27840
+    #     else:
+    #         raise NotImplementedError 
+
+    #     magnitude = torch.clip(magnitude, max=1e2)
+    #     real = magnitude * torch.cos(phase)
+    #     img = magnitude * torch.sin(phase)
+
+    #     ort_audio = sess.run(None, {
+    #         sess.get_inputs()[0].name: real.cpu().numpy(),
+    #         sess.get_inputs()[1].name: img.cpu().numpy()
+    #     })[0]
+    #     ort_audio = ort_audio.squeeze(1)
+    #     ort_audio = torch.from_numpy(ort_audio).to(device)
+
+    #     return ort_audio 
+
     def decode(self, x: torch.Tensor, s: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
-        # s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
-        self.manualfft.target_length = s.shape[2]
+        # s_stft_real_gt, s_stft_imag_gt = self._stft(s.squeeze(1))
         s_stft_real, s_stft_imag = self.manualfft._stft(s)
+        # s_stft_real, s_stft_imag = self._stft_onnx(s)
         s_stft = torch.cat([s_stft_real, s_stft_imag], dim=1)
 
         x = self.conv_pre(x)
@@ -550,8 +599,11 @@ class HiFTGenerator(nn.Module):
         magnitude = torch.exp(x[:, :self.istft_params["n_fft"] // 2 + 1, :])
         phase = torch.sin(x[:, self.istft_params["n_fft"] // 2 + 1:, :])  # actually, sin is redundancy
 
-        # x = self._istft(magnitude, phase)
+        print("magnitude",magnitude.shape)
+        print("phase",phase.shape)
+        # x_gt = self._istft(magnitude, phase)
         x = self.manualfft._istft(magnitude, phase)
+        # x = self._istft_onnx(magnitude, phase)
         x = torch.clamp(x, -self.audio_limit, self.audio_limit)
         return x
 

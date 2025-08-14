@@ -35,7 +35,7 @@ exp
 data
 raw_wav
 tensorboard
-**/*build*
+*.log 
 
 # Clangd files
 .cache
