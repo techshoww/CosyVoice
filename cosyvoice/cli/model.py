@@ -427,8 +427,9 @@ class CosyVoice2Model(CosyVoiceModel):
             tts_speech = tts_speech[:, neg_offset*480:]
             tts_source = tts_source[:,:, neg_offset*480:]
             print("tts_speech",tts_speech.shape)
-            print("self.hift_cache_dict[uuid]['speech'].shape",self.hift_cache_dict[uuid]['speech'].shape)
+            
             if self.hift_cache_dict[uuid] is not None:
+                print("self.hift_cache_dict[uuid]['speech'].shape",self.hift_cache_dict[uuid]['speech'].shape)
                 tts_speech = fade_in_out(tts_speech, self.hift_cache_dict[uuid]['speech'], self.speech_window)
         return tts_speech
 
