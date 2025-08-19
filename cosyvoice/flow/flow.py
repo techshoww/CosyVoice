@@ -186,6 +186,12 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         self.token_mel_ratio = token_mel_ratio
         self.pre_lookahead_len = pre_lookahead_len
 
+    def init_mask(self,):
+        self.encoder.init_mask()
+        for length in [103, 206, 200, 128, 256, 250, 153, 306, 300, 125, 250]:
+            mask_t = (~make_pad_mask(torch.tensor([length])))
+            self.register_buffer(f"mask_{length}", mask_t)
+
     def forward(
             self,
             batch: dict,
@@ -254,7 +260,9 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         # concat text and prompt_text
         token, token_len = torch.concat([prompt_token, token], dim=1), prompt_token_len + token_len
         mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
-        token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        # mask = self.get_buffer(f"mask_{token_len[0].item()}").unsqueeze(-1).to(embedding)
+        # token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        token = self.input_embedding(token) * mask
 
         print("token shape, token_len", token.shape, token_len)
         # text encode
@@ -273,6 +281,7 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         conds = conds.transpose(1, 2)
 
         mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
+        # mask = self.get_buffer(f"mask_{mel_len1 + mel_len2}").to(h)
         feat, _ = self.decoder(
             mu=h.transpose(1, 2).contiguous(),
             mask=mask.unsqueeze(1),
@@ -287,36 +296,34 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
 
     @torch.inference_mode()
     def inference_export(self,
-                  token,
-                  token_len,
-                  prompt_token,
-                  prompt_token_len,
+                  token_embedding,
                   prompt_feat,
-                  prompt_feat_len,
-                  embedding,
-                  finalize):
-        assert token.shape[0] == 1
+                  embedding):
+        # assert token_embedding.shape[0] == 1
         # xvec projection
         print("embedding",embedding.shape)
         embedding = F.normalize(embedding, dim=1)
         embedding = self.spk_embed_affine_layer(embedding)
         print("prompt_feat",prompt_feat.shape)
-        print("prompt_token",prompt_token.shape)
-        print("250 token",token.shape)
+        # print("prompt_token",prompt_token.shape)
+        # print("250 token",token.shape)
         # concat text and prompt_text
-        token = torch.concat([prompt_token, token], dim=1)
-        token_len = prompt_token_len + token_len
-        mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
-        token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        # token = torch.concat([prompt_token, token], dim=1)
+        # token_len = prompt_token_len + token_len
+        token_len = token_embedding.shape[1]
+
+        # mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
+        mask = self.get_buffer(f"mask_{token_len}").unsqueeze(-1).to(embedding)
+        # token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        # token = self.input_embedding(token) * mask
+        token = token_embedding * mask
 
         print("token shape, token_len", token.shape, token_len)
         # text encode
-        if finalize is True:
-            h, h_lengths = self.encoder(token, token_len, streaming=True)
-        else:
-            token, context = token[:, :-self.pre_lookahead_len], token[:, -self.pre_lookahead_len:]
-            h, h_lengths = self.encoder(token, token_len, context=context, streaming=True)
-            print("h",h.shape)
+        
+        token, context = token[:, :-self.pre_lookahead_len], token[:, -self.pre_lookahead_len:]
+        h, h_lengths = self.encoder(token, token_len, context=context, streaming=True)
+        print("h",h.shape)
         mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
         h = self.encoder_proj(h)
 
@@ -325,7 +332,61 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         conds[:, :mel_len1] = prompt_feat
         conds = conds.transpose(1, 2)
 
-        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
+        # mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
+        mask = self.get_buffer(f"mask_{mel_len1 + mel_len2}").to(h)
+        feat, _ = self.decoder(
+            mu=h.transpose(1, 2).contiguous(),
+            mask=mask.unsqueeze(1),
+            spks=embedding,
+            cond=conds,
+            n_timesteps=10,
+            streaming=True
+        )
+        feat = feat[:, :, mel_len1:]
+        assert feat.shape[2] == mel_len2
+        return feat.float()
+
+
+    @torch.inference_mode()
+    def inference_export_final(self,
+                  token_embedding,
+                  prompt_feat,
+                  embedding):
+        # assert token_embedding.shape[0] == 1
+        # xvec projection
+        print("embedding",embedding.shape)
+        embedding = F.normalize(embedding, dim=1)
+        embedding = self.spk_embed_affine_layer(embedding)
+        print("prompt_feat",prompt_feat.shape)
+        # print("prompt_token",prompt_token.shape)
+        # print("250 token",token.shape)
+        # concat text and prompt_text
+        # token = torch.concat([prompt_token, token], dim=1)
+        # token_len = prompt_token_len + token_len
+        token_len = token_embedding.shape[1]
+
+        # mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
+        
+        mask = self.get_buffer(f"mask_{token_len}").unsqueeze(-1).to(embedding)
+        # token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        # token = self.input_embedding(token) * mask
+        token = token_embedding * mask
+
+        print("token shape, token_len", token.shape, token_len)
+        # text encode
+        
+        h, h_lengths = self.encoder(token, token_len, streaming=True)
+        
+        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
+        h = self.encoder_proj(h)
+
+        # get conditions
+        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)
+        conds[:, :mel_len1] = prompt_feat
+        conds = conds.transpose(1, 2)
+
+        # mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
+        mask = self.get_buffer(f"mask_{mel_len1 + mel_len2}").to(h)
         feat, _ = self.decoder(
             mu=h.transpose(1, 2).contiguous(),
             mask=mask.unsqueeze(1),

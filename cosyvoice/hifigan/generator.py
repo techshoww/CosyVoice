@@ -274,13 +274,23 @@ class SineGen2(torch.nn.Module):
 
         # instantanouse phase sine[t] = sin(2*pi \sum_i=1 ^{t} rad)
         if not self.flag_for_pulse:
+            # rad_values = torch.nn.functional.interpolate(rad_values.transpose(1, 2),
+            #                                              scale_factor=1 / self.upsample_scale,
+            #                                              mode="linear").transpose(1, 2)
+
+            # phase = torch.cumsum(rad_values, dim=1) * 2 * np.pi
+            # phase = torch.nn.functional.interpolate(phase.transpose(1, 2) * self.upsample_scale,
+            #                                         scale_factor=self.upsample_scale, mode="linear").transpose(1, 2)
+            # sines = torch.sin(phase)
+
             rad_values = torch.nn.functional.interpolate(rad_values.transpose(1, 2),
                                                          scale_factor=1 / self.upsample_scale,
-                                                         mode="linear").transpose(1, 2)
+                                                         mode="linear")
 
-            phase = torch.cumsum(rad_values, dim=1) * 2 * np.pi
-            phase = torch.nn.functional.interpolate(phase.transpose(1, 2) * self.upsample_scale,
-                                                    scale_factor=self.upsample_scale, mode="linear").transpose(1, 2)
+            phase = torch.cumsum(rad_values, dim=-1) * (2 * np.pi * self.upsample_scale)
+            phase = torch.nn.functional.interpolate(phase ,
+                                                    scale_factor=self.upsample_scale, mode="linear")
+            phase = phase.transpose(1, 2)
             sines = torch.sin(phase)
         else:
             # If necessary, make sure that the first time step of every
@@ -632,7 +642,10 @@ class HiFTGenerator(nn.Module):
         s, _, _ = self.m_source(s)
         s = s.transpose(1, 2)
         # use cache_source to avoid glitch
+        print("s",s.shape)
+        print("cache_source",cache_source.shape)
         if cache_source.shape[2] != 0:
-            s[:, :, :cache_source.shape[2]] = cache_source
+            # s[:, :, :cache_source.shape[2]] = cache_source
+            s = torch.cat([ cache_source, s[:, :, cache_source.shape[2]:] ], dim=2)
         generated_speech = self.decode(x=speech_feat, s=s)
         return generated_speech, s

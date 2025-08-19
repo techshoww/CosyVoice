@@ -237,6 +237,11 @@ class UpsampleConformerEncoder(torch.nn.Module):
             ) for _ in range(4)
         ])
 
+    def init_mask(self,):
+        for length, max_len in [(103,100), (206,200),  (128,125), (256, 250), (153,150), (306, 300), (125,125), (250,250)]:
+            mask_t = (~make_pad_mask(torch.tensor([length]), max_len))
+            self.register_buffer(f"mask_{length}_{max_len}", mask_t)
+
     def output_size(self) -> int:
         return self._output_size
 
@@ -273,7 +278,11 @@ class UpsampleConformerEncoder(torch.nn.Module):
             https://discuss.pytorch.org/t/any-different-between-model-input-and-model-forward-input/3690/2
         """
         T = xs.size(1)
-        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
+        
+        if hasattr(self, f"mask_{xs_lens}_{T}"):
+            masks = self.get_buffer(f"mask_{xs_lens}_{T}").unsqueeze(1)  # (B, 1, T)
+        else:
+            masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)
         xs, pos_emb, masks = self.embed(xs, masks)
@@ -292,7 +301,11 @@ class UpsampleConformerEncoder(torch.nn.Module):
         xs, xs_lens = self.up_layer(xs, xs_lens)
         xs = xs.transpose(1, 2).contiguous()
         T = xs.size(1)
-        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
+        
+        if hasattr(self, f"mask_{xs_lens}_{T}"):
+            masks = self.get_buffer(f"mask_{xs_lens}_{T}").unsqueeze(1)  # (B, 1, T)
+        else:
+            masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
         xs, pos_emb, masks = self.up_embed(xs, masks)
         mask_pad = masks  # (B, 1, T/subsample_rate)
         chunk_masks = add_optional_chunk_mask(xs, masks, False, False, 0, self.static_chunk_size * self.up_layer.stride if streaming is True else 0, -1)

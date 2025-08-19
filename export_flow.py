@@ -40,35 +40,30 @@ cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 flow = cosyvoice.model.flow 
-flow.forward = flow.inference_export
-
-speech_token_len = 50
-token = torch.ones([1,speech_token_len], dtype=torch.int32)                          # 28 53 78 78 78 ... 50
-token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(device)
-
-prompt_token = torch.ones([1,75], dtype=torch.int32)
-prompt_token_len=torch.tensor([prompt_token.shape[1]], dtype=torch.int32).to(device)
 
 
+speech_token_len = int(sys.argv[1])                                 # 28 53 78 78 78 ... 50
+prompt_token_len = 75
+
+token_embedding = torch.ones([1,speech_token_len+prompt_token_len, 512], dtype=torch.float32)                          
 prompt_feat = torch.ones([1,150,80],dtype=torch.float32)
-prompt_feat_len=torch.tensor([prompt_feat.shape[1]], dtype=torch.int32).to(device)
-
 embedding = torch.ones([1,192], dtype=torch.float32)
+finalize = eval(sys.argv[2])
+print("finalize",finalize)
 
-finalize = True
 
-
-token = token.to(device)
-prompt_token = prompt_token.to(device)
+token_embedding = token_embedding.to(device)
 prompt_feat = prompt_feat.to(device)
 embedding = embedding.to(device)
 
-inputs = (token, token_len, prompt_token, prompt_token_len, prompt_feat, prompt_feat_len, embedding, finalize)
-input_names = ["token", "token_len", "prompt_token", "prompt_token_len", "prompt_feat", "prompt_feat_len", "embedding", "finalize"]
+inputs = (token_embedding,  prompt_feat,  embedding)
+input_names = ["token_embedding",  "prompt_feat",  "embedding"]
 output_names = ["mel"]
 if not finalize:
+    flow.forward = flow.inference_export
     onnx_output = f"flow_{speech_token_len}.onnx"
 else:
+    flow.forward = flow.inference_export_final
     onnx_output = f"flow_{speech_token_len}_final.onnx"
 
 export_onnx(flow, inputs, input_names, output_names, onnx_output)

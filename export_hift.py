@@ -42,8 +42,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 hift = cosyvoice.model.hift 
 hift.forward = hift.inference
 
-first = True 
-mel_len = 50
+# first = True 
+# mel_len =  50
+
+first = False 
+mel_len =  58
+
 mel = torch.ones([1,80,mel_len], dtype=torch.float32).to(device)
 if not first:
     hift_cache_source = torch.ones([1,1,3840],dtype=torch.float32).to(device)
