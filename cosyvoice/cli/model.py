@@ -269,9 +269,10 @@ class CosyVoice2Model(CosyVoiceModel):
 
         self.max_infer_chunk_num = 3                # 用于固定shape 推理
 
-        self.infer_onnx = False
-        self.export_onnx = False
-        
+        self.infer_onnx = eval(os.getenv("infer_onnx", "False"))
+        self.export_onnx = eval(os.getenv("export_onnx", "False"))
+        print("------------------------infer_onnx",self.infer_onnx)
+        print("------------------------export_onnx",self.export_onnx)
         if self.export_onnx:
             self.flow.init_mask()
 
@@ -299,9 +300,7 @@ class CosyVoice2Model(CosyVoiceModel):
         self.llm.lock = threading.Lock()
         del self.llm.llm.model.model.layers
 
-    def flow_onnx(self, token, prompt_token, prompt_feat, embedding, finalize):
-        token_len = token.shape[1]
-
+    def flow_onnx(self, token_embedding,  prompt_feat, embedding, token_len, finalize):
         if not finalize:    
             if token_len == 28:
                 sess_flow = self.flow_28
@@ -310,21 +309,18 @@ class CosyVoice2Model(CosyVoiceModel):
             elif token_len == 78:
                 sess_flow = self.flow_78 
             else:
-                raise NotImplementedError 
+                raise NotImplementedError(f"token_len:{token_len}") 
         elif finalize:
             if token_len == 50:
                 sess_flow = self.flow_50_final
             else:
-                raise NotImplementedError
+                raise NotImplementedError(f"finalize:{finalize},token_len:{token_len}") 
         
-        inputs = {"token":token.cpu().numpy().astype(np.int32),
-                    "token_len":torch.tensor([token.shape[1]], dtype=torch.int32).numpy(),
-                    "prompt_token": prompt_token.cpu().numpy().astype(np.int32),
-                    "prompt_token_len":torch.tensor([prompt_token.shape[1]], dtype=torch.int32).numpy(),
+        inputs = {"token_embedding":token_embedding.detach().cpu().numpy(),
                     "prompt_feat":prompt_feat.cpu().numpy(),
                     "embedding":embedding.cpu().numpy()}
         tts_mel = sess_flow.run(None, inputs)[0]
-        tts_mel = torch.from_numpy(tts_mel).to(token.device)
+        tts_mel = torch.from_numpy(tts_mel).to(token_embedding.device)
 
         return tts_mel
 
@@ -372,16 +368,21 @@ class CosyVoice2Model(CosyVoiceModel):
             elif self.export_onnx:
                 token_embedding = torch.concat([prompt_token.to(self.device), token.to(self.device)], dim=1) 
                 token_embedding = self.flow.input_embedding(token_embedding)
+                embedding = F.normalize(embedding.to(self.device), dim=1)
                 if not finalize:
                     tts_mel = self.flow.inference_export(token_embedding=token_embedding.to(self.device),
                                                     prompt_feat=prompt_feat.to(self.device),
-                                                    embedding=embedding.to(self.device))
+                                                    embedding=embedding)
                 else:
                     tts_mel = self.flow.inference_export_final(token_embedding=token_embedding.to(self.device),
                                                     prompt_feat=prompt_feat.to(self.device),
                                                     embedding=embedding.to(self.device))
             elif self.infer_onnx:
-                tts_mel = self.flow_onnx(token, prompt_token, prompt_feat, embedding, finalize)
+                token_embedding = torch.concat([prompt_token.to(self.device), token.to(self.device)], dim=1) 
+                token_embedding = self.flow.input_embedding(token_embedding)
+                embedding = F.normalize(embedding.to(self.device), dim=1)
+                token_len = token.shape[1]
+                tts_mel = self.flow_onnx(token_embedding,  prompt_feat, embedding, token_len, finalize)
             else:
                 raise NotImplementedError
         print("tts_mel.shape",tts_mel.shape)

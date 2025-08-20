@@ -91,20 +91,26 @@ class ConditionalCFM(BASECFM):
         sol = []
 
         # Do not use concat, it may cause memory format changed and trt infer with wrong results!
-        x_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
-        mask_in = torch.zeros([2, 1, x.size(2)], device=x.device, dtype=x.dtype)
+        # x_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
+        # mask_in = torch.zeros([2, 1, x.size(2)], device=x.device, dtype=x.dtype)
         mu_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
         t_in = torch.zeros([2], device=x.device, dtype=x.dtype)
         spks_in = torch.zeros([2, 80], device=x.device, dtype=x.dtype)
         cond_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
         for step in range(1, len(t_span)):
             # Classifier-Free Guidance inference introduced in VoiceBox
-            x_in[:] = x
-            mask_in[:] = mask
-            mu_in[0] = mu
-            t_in[:] = t.unsqueeze(0)
-            spks_in[0] = spks
-            cond_in[0] = cond
+            # x_in[:] = x
+            x_in = torch.cat([x,x],dim=0)
+            # mask_in[:] = mask
+            mask_in = torch.cat([mask, mask],dim=0)
+            # mu_in[0] = mu
+            mu_in = torch.cat([mu, mu_in[1:]], dim=0)
+            # t_in[:] = t.unsqueeze(0)
+            t_in = torch.cat([t, t],dim=0)
+            # spks_in[0] = spks
+            spks_in = torch.cat([spks, spks_in[1:]], dim=0)
+            # cond_in[0] = cond
+            cond_in = torch.cat([cond, cond_in[1:]], dim=0)
             dphi_dt = self.forward_estimator(
                 x_in, mask_in,
                 mu_in, t_in,
