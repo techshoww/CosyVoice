@@ -295,6 +295,7 @@ class CosyVoice2Model(CosyVoiceModel):
             self.flow.init_mask()
 
         if self.infer_onnx:
+            self.flow_input_embed = np.load("flow.input_embedding.npy")
             self.flow_28 = ort.InferenceSession("flow_28.onnx")
             self.flow_53 = ort.InferenceSession("flow_53.onnx")
             self.flow_78 = ort.InferenceSession("flow_78.onnx")
@@ -303,26 +304,26 @@ class CosyVoice2Model(CosyVoiceModel):
             self.hift_50_first = ort.InferenceSession("hift_50_first.onnx")
             self.hift_58 = ort.InferenceSession("hift_58.onnx")
         elif self.infer_axmodel:
-            self.flow_28 = AxModelInfer("flow_28.onnx")
-            self.flow_53 = AxModelInfer("flow_53.onnx")
-            self.flow_78 = AxModelInfer("flow_78.onnx")
-            self.flow_50_final = AxModelInfer("flow_50_final.onnx")
+            self.flow_input_embed = np.load("flow.input_embedding.npy")
+            self.flow_28 = AxModelInfer("flow_28.axmodel")
+            self.flow_53 = AxModelInfer("flow_53.axmodel")
+            self.flow_78 = AxModelInfer("flow_78.axmodel")
+            self.flow_50_final = AxModelInfer("flow_50_final.axmodel")
 
-            self.hift_50_first = AxModelInfer("hift_50_first.onnx")
-            self.hift_58 = AxModelInfer("hift_58.onnx")
+            self.hift_50_first = AxModelInfer("hift_50_first.axmodel")
+            self.hift_58 = AxModelInfer("hift_58.axmodel")
 
-        print("CosyVoice2Model init done")
 
     def load(self, llm_model, flow_model, hift_model):
         if not self.infer_axmodel and not self.infer_axmodel:
             self.llm.load_state_dict(torch.load(llm_model, map_location=self.device), strict=True)
             self.llm.to(self.device).eval()
-            self.flow.load_state_dict(torch.load(flow_model, map_location=self.device), strict=False)
-            self.flow.to(self.device).eval()
-            # in case hift_model is a hifigan model
-            hift_state_dict = {k.replace('generator.', ''): v for k, v in torch.load(hift_model, map_location=self.device).items()}
-            self.hift.load_state_dict(hift_state_dict, strict=True)
-            self.hift.to(self.device).eval()
+        self.flow.load_state_dict(torch.load(flow_model, map_location=self.device), strict=False)
+        self.flow.to(self.device).eval()
+        # in case hift_model is a hifigan model
+        hift_state_dict = {k.replace('generator.', ''): v for k, v in torch.load(hift_model, map_location=self.device).items()}
+        self.hift.load_state_dict(hift_state_dict, strict=True)
+        self.hift.to(self.device).eval()
         
 
     def load_jit(self, flow_encoder_model):
@@ -356,11 +357,11 @@ class CosyVoice2Model(CosyVoiceModel):
             else:
                 raise NotImplementedError(f"finalize:{finalize},token_len:{token_len}") 
         
-        inputs = {"token_embedding":token_embedding.detach().cpu().numpy(),
+        inputs = {"token_embedding":token_embedding,
                     "prompt_feat":prompt_feat.cpu().numpy(),
                     "embedding":embedding.cpu().numpy()}
         tts_mel = sess_flow.run(None, inputs)[0]
-        tts_mel = torch.from_numpy(tts_mel).to(token_embedding.device)
+        tts_mel = torch.from_numpy(tts_mel).to(prompt_feat.device)
 
         return tts_mel
 
@@ -397,10 +398,23 @@ class CosyVoice2Model(CosyVoiceModel):
             self.tts_speech_token_dict[uuid].append(i)
         self.llm_end_dict[uuid] = True
 
+    def flow_embed_tokens(self, input_ids):
+        assert len(input_ids.shape)==2, f"not support shape:{input_ids.shape}"
+        ret = []
+        for ids in input_ids:
+            emb =  np.take(self.flow_input_embed, ids, axis=0)
+            ret.append(emb)
+        
+        ret = np.stack(ret)
+        return ret
+
     def token2wav(self, token, prompt_token, prompt_feat, embedding, token_offset, uuid, stream=False, finalize=False, speed=1.0):
+        t1 = time.time()
         if self.infer_onnx or self.infer_axmodel:
             token_embedding = torch.concat([prompt_token.to(self.device), token.to(self.device)], dim=1) 
-            token_embedding = self.flow.input_embedding(token_embedding)
+            # token_embedding = self.flow.input_embedding(token_embedding)
+            token_embedding = self.flow_embed_tokens(token_embedding.detach().cpu().numpy())
+
             embedding = F.normalize(embedding.to(self.device), dim=1)
             token_len = token.shape[1]
             tts_mel = self.flow_onnx(token_embedding,  prompt_feat, embedding, token_len, finalize)
@@ -434,6 +448,9 @@ class CosyVoice2Model(CosyVoiceModel):
                                                         embedding=embedding.to(self.device))
                 else:
                     raise NotImplementedError
+        t2 = time.time()
+
+        dt_flow = t2 - t1
         print("tts_mel.shape",tts_mel.shape)
         # tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
         
@@ -454,8 +471,9 @@ class CosyVoice2Model(CosyVoiceModel):
             hift_cache_source = torch.zeros(1, 1, 0)
         # keep overlap mel and hift cache
         print("318 tts_mel.shape",tts_mel.shape)
+        t1 = time.time()
         if finalize is False:
-            if not (self.infer_onnx and self.infer_axmodel):
+            if not (self.infer_onnx or self.infer_axmodel):
                 tts_speech, tts_source = self.hift.inference(speech_feat=tts_mel, cache_source=hift_cache_source)
             else:
                 tts_speech, tts_source = self.hift_onnx(tts_mel, hift_cache_source)
@@ -470,7 +488,7 @@ class CosyVoice2Model(CosyVoiceModel):
             if speed != 1.0:
                 assert self.hift_cache_dict[uuid] is None, 'speed change only support non-stream inference mode'
                 tts_mel = F.interpolate(tts_mel, size=int(tts_mel.shape[2] / speed), mode='linear')
-            if not (self.infer_onnx and self.infer_axmodel):
+            if not (self.infer_onnx or self.infer_axmodel):
                 tts_speech, tts_source = self.hift.inference(speech_feat=tts_mel, cache_source=hift_cache_source)
             else:
                 tts_speech, tts_source = self.hift_onnx(tts_mel, hift_cache_source)
@@ -481,6 +499,12 @@ class CosyVoice2Model(CosyVoiceModel):
             if self.hift_cache_dict[uuid] is not None:
                 print("self.hift_cache_dict[uuid]['speech'].shape",self.hift_cache_dict[uuid]['speech'].shape)
                 tts_speech = fade_in_out(tts_speech, self.hift_cache_dict[uuid]['speech'], self.speech_window)
+        t2 = time.time()
+        dt_hift = t2 - t1 
+
+        dt = dt_flow + dt_hift 
+        rtf = dt/(tts_speech.shape[1]/24000)
+        print("---------------rft",rtf)
         return tts_speech
 
     def tts(self, text=torch.zeros(1, 0, dtype=torch.int32), flow_embedding=torch.zeros(0, 192), llm_embedding=torch.zeros(0, 192),

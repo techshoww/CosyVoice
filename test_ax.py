@@ -6,7 +6,7 @@ import torchaudio
 import torch
 import os 
 
-# os.environ["infer_axmodel"] = "True"
+os.environ["infer_axmodel"] = "True"
 cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load_trt=False, load_vllm=False, fp16=False)
 prompt_speech_16k = load_wav('./asset/zero_shot_prompt.wav', 16000)
 # NOTE if you want to reproduce the results on https://funaudiollm.github.io/cosyvoice2, please add text_frontend=False during inference
@@ -22,7 +22,7 @@ for i, j in enumerate(cosyvoice.inference_zero_shot(text, prompt_text, prompt_sp
 
 output = torch.cat(output, dim=1)
 torchaudio.save("zero_shot_output_test.wav", output, cosyvoice.sample_rate)
-
+os.system("chmod 777 *test.wav")
 # # save zero_shot spk for future usage
 # assert cosyvoice.add_zero_shot_spk('希望你以后能够做的比我还好呦。', prompt_speech_16k, 'my_zero_shot_spk') is True
 # for i, j in enumerate(cosyvoice.inference_zero_shot('收到好友从远方寄来的生日礼物，那份意外的惊喜与深深的祝福让我心中充满了甜蜜的快乐，笑容如花儿般绽放。', '', '', zero_shot_spk_id='my_zero_shot_spk', stream=False)):

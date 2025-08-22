@@ -281,12 +281,12 @@ class AxLMInfer:
         self.prefill_decoder_sessins = None
         self.post_process_session = None
     
-    def forward(self,*args, **kwargs):
+    def inference(self,*args, **kwargs):
         raise NotImplementedError("forward funciton was not implemented")
 
     @lazyforward
     def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
+        return self.inference(*args, **kwargs)
 
         
 

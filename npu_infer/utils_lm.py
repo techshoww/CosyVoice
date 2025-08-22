@@ -13,6 +13,7 @@ from torch import nn
 from scipy.special import log_softmax
 from typing import Dict, Optional, Callable, List, Generator
 from utils_axinfer import AxModelInfer, AxLMInfer
+import time 
 
 def nucleus_sampling(weighted_scores, top_p=0.8, top_k=25):
     prob, indices = [], []
@@ -76,7 +77,7 @@ class Qwen2LM_AXInfer(AxLMInfer):
         assert len(input_ids.shape)==2, f"not support shape:{input_ids.shape}"
         ret = []
         for ids in input_ids:
-            emb =  np.take(self.embeds, input_ids[0], axis=0)
+            emb =  np.take(self.embeds, ids, axis=0)
             ret.append(emb)
         
         ret = np.stack(ret)
@@ -87,7 +88,7 @@ class Qwen2LM_AXInfer(AxLMInfer):
         assert len(input_ids.shape)==2, f"not support shape:{input_ids.shape}"
         ret = []
         for ids in input_ids:
-            emb =  np.take(self.embeds, input_ids[0], axis=0)
+            emb =  np.take(self.speech_embedding, ids, axis=0)
             ret.append(emb)
         
         ret = np.stack(ret)
@@ -171,8 +172,7 @@ class Qwen2LM_AXInfer(AxLMInfer):
 
         post_out = self.post_process_session(
             {"input": data[:, token_len - 1 : token_len, :]}
-        )[0]
-
+        )[1]
         return post_out
 
     def forward_decode(self, input_embeds, position_id):
@@ -206,7 +206,7 @@ class Qwen2LM_AXInfer(AxLMInfer):
             self.v_caches[i][:, position_id, :] = outputs[1][:, :, :]
             data = outputs[2]
         
-        post_out = self.post_process_session({"input": data})[0]
+        post_out = self.post_process_session({"input": data})[1]
     
         return post_out
         
@@ -244,28 +244,29 @@ class Qwen2LM_AXInfer(AxLMInfer):
 
         # infer
         out_tokens = []
-
+        t1 = time.time()
         for i in range(max_len):
             if i==0:
-                position_ids = np.arange(lm_input.shape[1]).reshape(1,-1)#.repeat(3,1).reshape(-1,3).transpose(1,0)
+                position_ids = np.arange(lm_input.shape[1]).reshape(1,-1)
                 y_pred = self.forward_prefill(lm_input, position_ids)
                 position_id = lm_input.shape[1]
             else:
                 y_pred = self.forward_decode(lm_input, position_id)
                 position_id += 1
-            print("y_pred",y_pred.shape)
             logp = self.llm_decoder({"x":y_pred[:, -1].astype(np.float32)})[0]
-            logp = log_softmax(logp, axis=-1)
+            # logp = log_softmax(logp, axis=-1)
             logp = torch.from_numpy(logp)
-            top_ids = self.sampling_ids(logp.reshape(-1), out_tokens, sampling, ignore_eos=True if i < min_len else False).item()
-
+            logp = logp.log_softmax(dim=-1)
+            top_ids = self.sampling_ids(logp.squeeze(dim=0), out_tokens, sampling, ignore_eos=True if i < min_len else False).item()
             if top_ids == self.speech_token_size:
                 break
             if top_ids > self.speech_token_size:
                 continue
             # in stream mode, yield token one by one
-            print("top_ids",top_ids)
             yield top_ids
             out_tokens.append(top_ids)
             lm_input = self.speech_embedding[top_ids].reshape(1, 1, -1)
+            t2 = time.time()
+            print("len out_tokens", len(out_tokens))
+            print("llm time(s):",t2-t1)
 
