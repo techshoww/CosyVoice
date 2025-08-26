@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import logging
 import random
 from typing import Dict, Optional
@@ -302,9 +303,10 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
                   embedding):
         # assert token_embedding.shape[0] == 1
         # xvec projection
-        torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
-        torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
-        torch.save(embedding, "embedding.pth")
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
+            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
+            torch.save(embedding, "embedding.pth")
         print("embedding",embedding.shape)
         embedding = F.normalize(embedding, dim=1)
         embedding = self.spk_embed_affine_layer(embedding)
@@ -358,9 +360,10 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
                   token_embedding,
                   prompt_feat,
                   embedding):
-        torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
-        torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
-        torch.save(embedding, "embedding.pth")
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
+            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
+            torch.save(embedding, "embedding.pth")
         # assert token_embedding.shape[0] == 1
         # xvec projection
         print("embedding",embedding.shape)

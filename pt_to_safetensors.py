@@ -2,7 +2,7 @@ import torch
 from safetensors.torch import save_file
 import os
 import logging
-
+import sys
 # --- 可选：设置日志记录 ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -120,9 +120,9 @@ def convert_pt_to_safetensors(pt_file_path, safetensors_file_path=None, prefix_t
 # --- 使用示例 ---
 if __name__ == "__main__":
     # --- 请修改为你自己的 .pt 或 .pth 文件路径 ---
-    input_pt_file = "pretrained_models/CosyVoice2-0.5B/llm.pt" # 修改为实际路径和文件名
+    input_pt_file = f"{sys.argv[1]}/llm.pt" # 修改为实际路径和文件名
     # --- 可选：指定输出文件路径 ---
-    output_safetensors_file = "pretrained_models/CosyVoice2-0.5B/CosyVoice-BlankEN/model.safetensors"
+    output_safetensors_file = f"{sys.argv[2]}/CosyVoice-BlankEN/model.safetensors"
     # output_safetensors_file = None # 如果为 None，则使用默认命名规则
 
     # --- 执行转换 ---

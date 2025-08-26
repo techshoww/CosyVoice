@@ -34,6 +34,7 @@ def export_onnx(model, input, input_names, output_names, onnx_output):
     onnx.save(model_simp, onnx_output)
     print("onnx simpilfy successed, and model saved in {}".format(onnx_output))
 
+os.environ["export_onnx"] = "True"
 
 cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load_trt=False, load_vllm=False, fp16=False)
 

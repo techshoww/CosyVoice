@@ -13,6 +13,7 @@ prompt_speech_16k = load_wav('./asset/zero_shot_prompt.wav', 16000)
 # zero_shot usage
 prompt_text = '希望你以后能够做的比我还好呦。'
 text = '收到好友从远方寄来的生日礼物，那份意外的惊喜与深深的祝福让我心中充满了甜蜜的快乐，笑容如花儿般绽放。'
+text = "锄禾日当午，汗滴禾下土。谁知盘中餐，粒粒皆辛苦。"
 # text = '恭喜发财，恭喜发财'
 output = []
 for i, j in enumerate(cosyvoice.inference_zero_shot(text, prompt_text, prompt_speech_16k, stream=True)):

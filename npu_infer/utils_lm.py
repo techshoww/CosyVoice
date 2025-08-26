@@ -70,7 +70,7 @@ class Qwen2LM_AXInfer(AxLMInfer):
             for _ in range(cfg.num_hidden_layers)
         ]
 
-        self.llm_decoder = AxModelInfer(f"{model_dir}/llm_decoder.onnx")
+        self.llm_decoder = AxModelInfer(f"{model_dir}/llm_decoder.axmodel")
         self.speech_token_size = 6561
 
     def embed_tokens(self, input_ids):

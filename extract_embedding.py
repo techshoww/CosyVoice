@@ -7,7 +7,7 @@ import torch
 import numpy as np 
 import os
 import sys 
-
+os.environ["export_onnx"] = "True"
 cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load_trt=False, load_vllm=False, fp16=False)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
