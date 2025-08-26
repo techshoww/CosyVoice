@@ -291,8 +291,8 @@ class CosyVoice2Model(CosyVoiceModel):
         print("------------------------infer_axmodel",self.infer_axmodel)
         print("------------------------infer_onnx",self.infer_onnx)
         print("------------------------export_onnx",self.export_onnx)
-        if self.export_onnx:
-            self.flow.init_mask()
+        
+        self.flow.init_mask()
 
         if self.infer_onnx:
             self.flow_input_embed = np.load("flow.input_embedding.npy")
@@ -305,10 +305,14 @@ class CosyVoice2Model(CosyVoiceModel):
             self.hift_58 = ort.InferenceSession("hift_58.onnx")
         elif self.infer_axmodel:
             self.flow_input_embed = np.load("flow.input_embedding.npy")
-            self.flow_28 = AxModelInfer("flow_28.axmodel")
-            self.flow_53 = AxModelInfer("flow_53.axmodel")
-            self.flow_78 = AxModelInfer("flow_78.axmodel")
-            self.flow_50_final = AxModelInfer("flow_50_final.axmodel")
+            self.flow_encoder_28 = AxModelInfer("flow_encoder_28.axmodel")
+            self.flow_encoder_53 = AxModelInfer("flow_encoder_53.axmodel")
+            self.flow_encoder_78 = AxModelInfer("flow_encoder_78.axmodel")
+            self.flow_encoder_50_final = AxModelInfer("flow_encoder_50_final.axmodel")
+
+            self.flow_estimator_200 = AxModelInfer("flow_estimator_200.axmodel")
+            self.flow_estimator_250 = AxModelInfer("flow_estimator_250.axmodel")
+            self.flow_estimator_300 = AxModelInfer("flow_estimator_300.axmodel")
 
             self.hift_50_first = AxModelInfer("hift_50_first.axmodel")
             self.hift_58 = AxModelInfer("hift_58.axmodel")
@@ -342,28 +346,138 @@ class CosyVoice2Model(CosyVoiceModel):
         del self.llm.llm.model.model.layers
 
     def flow_onnx(self, token_embedding,  prompt_feat, embedding, token_len, finalize):
+        
+        mu,  spks, cond = self.flow_encoder_onnx(token_embedding,  prompt_feat, embedding, token_len, finalize)
+
+        mask = self.flow.get_buffer(f"mask_{mu.shape[2]}").to(mu)
+        mask = mask.unsqueeze(1)
+
+        feat = self.flow_decoder_onnx(mu, mask, spks, cond)
+        mel_len1, mel_len2 = prompt_feat.shape[1], mu.shape[2] - prompt_feat.shape[1]
+
+        feat = feat[:, :, mel_len1:]
+        assert feat.shape[2] == mel_len2
+        return feat.float()
+
+    def flow_encoder_onnx(self, token_embedding,  prompt_feat, embedding, token_len, finalize):
         if not finalize:    
             if token_len == 28:
-                sess_flow = self.flow_28
+                sess = self.flow_encoder_28
             elif token_len == 53:
-                sess_flow = self.flow_53
+                sess = self.flow_encoder_53
             elif token_len == 78:
-                sess_flow = self.flow_78 
+                sess = self.flow_encoder_78 
             else:
                 raise NotImplementedError(f"token_len:{token_len}") 
         elif finalize:
             if token_len == 50:
-                sess_flow = self.flow_50_final
+                sess = self.flow_encoder_50_final
             else:
                 raise NotImplementedError(f"finalize:{finalize},token_len:{token_len}") 
         
         inputs = {"token_embedding":token_embedding,
                     "prompt_feat":prompt_feat.cpu().numpy(),
                     "embedding":embedding.cpu().numpy()}
-        tts_mel = sess_flow.run(None, inputs)[0]
-        tts_mel = torch.from_numpy(tts_mel).to(prompt_feat.device)
+        mu,  spks, cond = sess.run(None, inputs)
 
-        return tts_mel
+        device = prompt_feat.device
+        mu = torch.from_numpy(mu).to(device)
+        spks = torch.from_numpy(spks).to(device)
+        cond = torch.from_numpy(cond).to(device)
+        return mu,  spks, cond
+
+    def flow_decoder_estimator_onnx(self, x, mask, mu, t, spks, cond):
+        x_len = x.shape[2]
+        if x_len == 200:
+            sess = self.flow_estimator_200
+        elif x_len == 250:
+            sess = self.flow_estimator_250
+        elif x_len == 300:
+            sess = self.flow_estimator_300
+        else:
+            raise NotImplementedError(f"x_len:{x_len}") 
+
+        inputs = {"x":x.cpu().numpy(), "mask":mask.cpu().numpy(), "mu":mu.cpu().numpy(),  "t":t.cpu().numpy(), "spks":spks.cpu().numpy(), "cond":cond.cpu().numpy()}
+        output = sess.run(None, inputs)[0]
+        output = torch.from_numpy(output).to(x.device)
+        return output
+
+
+    def flow_decoder_solve_euler(self, x, t_span, mu, mask, spks, cond):
+        """
+        Fixed euler solver for ODEs.
+        Args:
+            x (torch.Tensor): random noise
+            t_span (torch.Tensor): n_timesteps interpolated
+                shape: (n_timesteps + 1,)
+            mu (torch.Tensor): output of encoder
+                shape: (batch_size, n_feats, mel_timesteps)
+            mask (torch.Tensor): output_mask
+                shape: (batch_size, 1, mel_timesteps)
+            spks (torch.Tensor, optional): speaker ids. Defaults to None.
+                shape: (batch_size, spk_emb_dim)
+            cond: Not used but kept for future purposes
+        """
+        streaming = True
+        t, _, dt = t_span[0], t_span[-1], t_span[1] - t_span[0]
+        t = t.unsqueeze(dim=0)
+
+        # I am storing this because I can later plot it by putting a debugger here and saving it to a file
+        # Or in future might add like a return_all_steps flag
+        sol = []
+
+        # Do not use concat, it may cause memory format changed and trt infer with wrong results!
+        # x_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
+        # mask_in = torch.zeros([2, 1, x.size(2)], device=x.device, dtype=x.dtype)
+        mu_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
+        t_in = torch.zeros([2], device=x.device, dtype=x.dtype)
+        spks_in = torch.zeros([2, 80], device=x.device, dtype=x.dtype)
+        cond_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
+        for step in range(1, len(t_span)):
+            # Classifier-Free Guidance inference introduced in VoiceBox
+            # x_in[:] = x
+            x_in = torch.cat([x,x],dim=0)
+            # mask_in[:] = mask
+            mask_in = torch.cat([mask, mask],dim=0)
+            # mu_in[0] = mu
+            mu_in = torch.cat([mu, mu_in[1:]], dim=0)
+            # t_in[:] = t.unsqueeze(0)
+            t_in = torch.cat([t, t],dim=0)
+            # spks_in[0] = spks
+            spks_in = torch.cat([spks, spks_in[1:]], dim=0)
+            # cond_in[0] = cond
+            cond_in = torch.cat([cond, cond_in[1:]], dim=0)
+            # dphi_dt = self.forward_estimator(
+            #     x_in, mask_in,
+            #     mu_in, t_in,
+            #     spks_in,
+            #     cond_in,
+            #     streaming
+            # )
+            dphi_dt = self.flow_decoder_estimator_onnx(
+                x_in, mask_in,
+                mu_in, t_in,
+                spks_in,
+                cond_in,
+            )
+            dphi_dt, cfg_dphi_dt = torch.split(dphi_dt, [x.size(0), x.size(0)], dim=0)
+            dphi_dt = ((1.0 + self.flow.decoder.inference_cfg_rate) * dphi_dt - self.flow.decoder.inference_cfg_rate * cfg_dphi_dt)
+            x = x + dt * dphi_dt
+            t = t + dt
+            sol.append(x)
+            if step < len(t_span) - 1:
+                dt = t_span[step + 1] - t
+
+        return sol[-1].float()
+
+    def flow_decoder_onnx(self, mu, mask, spks, cond, n_timesteps=10, temperature=1.0):
+
+        z = self.flow.decoder.rand_noise[:, :, :mu.size(2)].to(mu.device).to(mu.dtype) * temperature
+        # fix prompt and overlap part mu and z
+        t_span = torch.linspace(0, 1, n_timesteps + 1, device=mu.device, dtype=mu.dtype)
+        if self.flow.decoder.t_scheduler == 'cosine':
+            t_span = 1 - torch.cos(t_span * 0.5 * torch.pi)
+        return self.flow_decoder_solve_euler(z, t_span=t_span, mu=mu, mask=mask, spks=spks, cond=cond)
 
     def hift_onnx(self, tts_mel, cache_source):
         mel_len = tts_mel.shape[2]
@@ -415,7 +529,7 @@ class CosyVoice2Model(CosyVoiceModel):
             # token_embedding = self.flow.input_embedding(token_embedding)
             token_embedding = self.flow_embed_tokens(token_embedding.detach().cpu().numpy())
 
-            embedding = F.normalize(embedding.to(self.device), dim=1)
+            # embedding = F.normalize(embedding.to(self.device), dim=1)
             token_len = token.shape[1]
             tts_mel = self.flow_onnx(token_embedding,  prompt_feat, embedding, token_len, finalize)
         else:
@@ -437,7 +551,7 @@ class CosyVoice2Model(CosyVoiceModel):
                 elif self.export_onnx:
                     token_embedding = torch.concat([prompt_token.to(self.device), token.to(self.device)], dim=1) 
                     token_embedding = self.flow.input_embedding(token_embedding)
-                    embedding = F.normalize(embedding.to(self.device), dim=1)
+                    # embedding = F.normalize(embedding.to(self.device), dim=1)
                     if not finalize:
                         tts_mel = self.flow.inference_export(token_embedding=token_embedding.to(self.device),
                                                         prompt_feat=prompt_feat.to(self.device),

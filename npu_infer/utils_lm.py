@@ -267,6 +267,6 @@ class Qwen2LM_AXInfer(AxLMInfer):
             out_tokens.append(top_ids)
             lm_input = self.speech_embedding[top_ids].reshape(1, 1, -1)
             t2 = time.time()
-            print("len out_tokens", len(out_tokens))
-            print("llm time(s):",t2-t1)
+            # print("len out_tokens", len(out_tokens))
+            # print("llm time(s):",t2-t1)
 

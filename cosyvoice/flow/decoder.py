@@ -419,6 +419,20 @@ class CausalConditionalDecoder(ConditionalDecoder):
         Returns:
             _type_: _description_
         """
+        print("x", x.shape)
+        print("mask", mask.shape)
+        print("mu", mu.shape)
+        print("t", t.shape)
+        print("spks", spks.shape)
+        print("cond", cond.shape)
+
+        torch.save(x, f"x_{x.shape[2]}.pth")
+        torch.save(mask, f"mask_{mask.shape[2]}.pth")
+        torch.save(mu, f"mu_{mu.shape[2]}.pth")
+        torch.save(t, f"t.pth")
+        torch.save(spks, f"spks.pth")
+        torch.save(cond, f"cond_{cond.shape[2]}.pth")
+
         t = self.time_embeddings(t).to(t.dtype)
         t = self.time_mlp(t)
 

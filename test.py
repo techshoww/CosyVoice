@@ -6,7 +6,7 @@ import torchaudio
 import torch
 import os 
 
-# os.environ["infer_axmodel"] = "True"
+os.environ["export_onnx"] = "True"
 cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load_trt=False, load_vllm=False, fp16=False)
 prompt_speech_16k = load_wav('./asset/zero_shot_prompt.wav', 16000)
 # NOTE if you want to reproduce the results on https://funaudiollm.github.io/cosyvoice2, please add text_frontend=False during inference
