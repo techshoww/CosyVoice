@@ -262,7 +262,7 @@ class CosyVoice2Model(CosyVoiceModel):
             cfg = AutoConfig.from_pretrained(
                 "pretrained_models/CosyVoice2-0.5B/CosyVoice-BlankEN", trust_remote_code=True
             )
-            self.llm = Qwen2LM_AXInfer(cfg, "CosyVoice-BlankEN-Ax650-prefill_512-0826-2", "qwen2", prefill_len=512, lastN=1023, chunk_len=128)
+            self.llm = Qwen2LM_AXInfer(cfg, "CosyVoice-BlankEN-Ax650-prefill_512", "qwen2", prefill_len=512, lastN=1023, chunk_len=128)
         else:
             self.llm = llm
         self.flow = flow

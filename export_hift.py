@@ -45,8 +45,11 @@ hift.forward = hift.inference
 # first = True 
 # mel_len =  50
 
-first = False 
-mel_len =  58
+# first = False 
+# mel_len =  58
+
+first = eval(sys.argv[1])
+mel_len = int(sys.argv[2])
 
 mel = torch.ones([1,80,mel_len], dtype=torch.float32).to(device)
 if not first:

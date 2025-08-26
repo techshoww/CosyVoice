@@ -1,7 +1,7 @@
 set -e 
 
 INPUT=pretrained_models/CosyVoice2-0.5B
-OUTPUT=CosyVoice-BlankEN-Ax650-prefill_512-0826-2
+OUTPUT=CosyVoice-BlankEN-Ax650-prefill_512
 
 timestamp=$(date +%s) # 获取当前时间戳
 INPUT_MID="${INPUT}_${timestamp}"
