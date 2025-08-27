@@ -304,18 +304,18 @@ class CosyVoice2Model(CosyVoiceModel):
             self.hift_50_first = ort.InferenceSession("hift_50_first.onnx")
             self.hift_58 = ort.InferenceSession("hift_58.onnx")
         elif self.infer_axmodel:
-            self.flow_input_embed = np.load("flow.input_embedding.npy")
-            self.flow_encoder_28 = AxModelInfer("flow_encoder_28.axmodel")
-            self.flow_encoder_53 = AxModelInfer("flow_encoder_53.axmodel")
-            self.flow_encoder_78 = AxModelInfer("flow_encoder_78.axmodel")
-            self.flow_encoder_50_final = AxModelInfer("flow_encoder_50_final.axmodel")
+            self.flow_input_embed = np.load("token2wav-axmodels/flow.input_embedding.npy")
+            self.flow_encoder_28 = AxModelInfer("token2wav-axmodels/flow_encoder_28.axmodel")
+            self.flow_encoder_53 = AxModelInfer("token2wav-axmodels/flow_encoder_53.axmodel")
+            self.flow_encoder_78 = AxModelInfer("token2wav-axmodels/flow_encoder_78.axmodel")
+            self.flow_encoder_50_final = AxModelInfer("token2wav-axmodels/flow_encoder_50_final.axmodel")
 
-            self.flow_estimator_200 = AxModelInfer("flow_estimator_200.axmodel")
-            self.flow_estimator_250 = AxModelInfer("flow_estimator_250.axmodel")
-            self.flow_estimator_300 = AxModelInfer("flow_estimator_300.axmodel")
+            self.flow_estimator_200 = AxModelInfer("token2wav-axmodels/flow_estimator_200.axmodel")
+            self.flow_estimator_250 = AxModelInfer("token2wav-axmodels/flow_estimator_250.axmodel")
+            self.flow_estimator_300 = AxModelInfer("token2wav-axmodels/flow_estimator_300.axmodel")
 
-            self.hift_50_first = AxModelInfer("hift_50_first.axmodel")
-            self.hift_58 = AxModelInfer("hift_58.axmodel")
+            self.hift_50_first = AxModelInfer("token2wav-axmodels/hift_50_first.axmodel")
+            self.hift_58 = AxModelInfer("token2wav-axmodels/hift_58.axmodel")
 
 
     def load(self, llm_model, flow_model, hift_model):

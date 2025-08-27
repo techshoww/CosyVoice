@@ -27,16 +27,15 @@ CosyVoice2
 ```bash
 pip install modelscope
 ```
-(2) 在 python 中执行以下命令
-```python
-from modelscope import snapshot_download
-snapshot_download('iic/CosyVoice2-0.5B', local_dir='pretrained_models/CosyVoice2-0.5B')
-snapshot_download('pengzhendong/wetext', local_dir='pengzhendong/wetext')
+(2) 执行以下命令
+```bash
+modelscope download --model iic/CosyVoice2-0.5B --local_dir pretrained_models/CosyVoice2-0.5B
+modelscope download --model pengzhendong/wetext --local_dir pengzhendong/wetext
 ```
 
 2. 安装python包   
 ```bash
-pip install -r model_convert/requirements.txt
+pip install -r requirements.txt
 ``` 
 
 ### 二、生成calibration dataset  
@@ -68,6 +67,7 @@ python extract_embedding.py
 ```
 
 ### 四、转换模型（onnx -> axmodel）  
+**先切换到AX650工具链环境下** 
 1. 转换 flow encoder 和 flow decoder estimator  
 ```bash
 bash build_flow.sh
@@ -80,7 +80,23 @@ bash build_hift.sh
 将转换好的axmodel模型复制到当前目录下  
 3. 转换 llm  
 ```bash
-model_convert/build_llm.sh
+bash build_llm.sh
+```
+4. 将编译好的axmodel复制出来  
+```
+mkdir token2wav-axmodels && \
+cp build-output-estimator-200/flow_estimator_200.axmodel \
+build-output-estimator-250/flow_estimator_250.axmodel \
+build-output-estimator-300/flow_estimator_300.axmodel \
+build-output-flow_encoder_28-0825/flow_encoder_28.axmodel \
+build-output-flow_encoder_50_final-0825/flow_encoder_50_final.axmodel \
+build-output-flow_encoder_53-0825/flow_encoder_53.axmodel \
+build-output-flow_encoder_78-0825/flow_encoder_78.axmodel \
+build-output-hift_50_first-0826/hift_50_first.axmodel \
+build-output-hift_58-0826/hift_58.axmodel \
+flow.input_embedding.float16.bin  \
+flow.input_embedding.npy \
+token2wav-axmodels
 ```
 
 ### 五、测试axmodel  

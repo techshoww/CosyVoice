@@ -12,7 +12,7 @@ for p in paths:
     np.save(name+".npy", a.detach().cpu().numpy())
     
     os.system(f"tar -cvf {name}.tar {name}.npy")
-
+    os.system(f"rm {name}.npy {name}.pth")
 
 paths = glob("llm_decoder_input_*.pth")
 for p in paths:
@@ -20,4 +20,5 @@ for p in paths:
     a = torch.load(p)
     np.save(name+".npy", a.detach().cpu().numpy())
 
-    os.system(f"tar -cvf llm_decoder_input.tar llm_decoder_input_*.npy")
+os.system(f"tar -cvf llm_decoder_input.tar llm_decoder_input_*.npy")
+os.system("rm llm_decoder_input_*.npy llm_decoder_input_*.pth")

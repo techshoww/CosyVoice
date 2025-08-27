@@ -53,11 +53,11 @@ output_names = ["y"]
 
 onnx_output = f"llm_decoder.onnx"
 
-# export_onnx(model, inputs, input_names, output_names, onnx_output)
+export_onnx(model, inputs, input_names, output_names, onnx_output)
 
 
-norm = cosyvoice.model.llm.llm.model.model.norm
+# norm = cosyvoice.model.llm.llm.model.model.norm
 
-onnx_output = f"postnorm.onnx"
+# onnx_output = f"postnorm.onnx"
 
-export_onnx(norm, inputs, input_names, output_names, onnx_output)
+# export_onnx(norm, inputs, input_names, output_names, onnx_output)

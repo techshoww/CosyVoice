@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=""
 nohup python -u export_flow_encoder.py 28 False > export_flow_28.log &
 nohup python -u export_flow_encoder.py 53 False > export_flow_53.log &
 nohup python -u export_flow_encoder.py 78 False > export_flow_78.log &

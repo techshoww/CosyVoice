@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=""
 
-nohup python model_convert/export_hift.py True 50 > export_hift_first_50.log &
-nohup python model_convert/export_hift.py False 58 > export_hift_58.log &
+nohup python export_hift.py True 50 > export_hift_first_50.log &
+nohup python export_hift.py False 58 > export_hift_58.log &
