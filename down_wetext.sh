@@ -1,0 +1,1 @@
+modelscope download --model pengzhendong/wetext --local_dir pengzhendong/wetext
