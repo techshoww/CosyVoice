@@ -82,7 +82,7 @@ bash build_hift.sh
 ```bash
 bash build_llm.sh
 ```
-4. 将编译好的axmodel复制出来  
+4. 将编译好的axmodel复制出来放到token2wav-axmodels文件  
 ```
 mkdir token2wav-axmodels && \
 cp build-output-estimator-200/flow_estimator_200.axmodel \
