@@ -7,14 +7,14 @@ import torch
 import os 
 
 os.environ["export_onnx"] = "True"
-os.environ["save_calib"] = "True"
+# os.environ["save_calib"] = "True"
 cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load_trt=False, load_vllm=False, fp16=False)
 prompt_speech_16k = load_wav('./asset/zero_shot_prompt.wav', 16000)
 # NOTE if you want to reproduce the results on https://funaudiollm.github.io/cosyvoice2, please add text_frontend=False during inference
 # zero_shot usage
 prompt_text = '希望你以后能够做的比我还好呦。'
 text = '收到好友从远方寄来的生日礼物，那份意外的惊喜与深深的祝福让我心中充满了甜蜜的快乐，笑容如花儿般绽放。'
-# text = '恭喜发财，恭喜发财'
+text = '君不见黄河之水天上来，奔流到海不复回。君不见高堂明镜悲白发，朝如青丝暮成雪。'
 output = []
 for i, j in enumerate(cosyvoice.inference_zero_shot(text, prompt_text, prompt_speech_16k, stream=True)):
     print("j['tts_speech'].shape",j['tts_speech'].shape)

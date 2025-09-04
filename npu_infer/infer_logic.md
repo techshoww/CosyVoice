@@ -92,3 +92,9 @@ hift_cache_mel 拼接 tts_mel
 ### flow 
 
 ### hift
+
+
+## 注意  
+llm 和 token2wav 输入的 prompt speech token 相同，但是之后转 embedding的处理不同：  
+llm中是使用 speech_embedding 将 prompt_speech_token 转为 prompt_speech_token_emb   维度是 896  
+token2wav中是使用 flow.input_embedding 将 prompt speech token转为 token_embedding  维度是 512  

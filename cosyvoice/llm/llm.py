@@ -512,7 +512,7 @@ class Qwen2LM(TransformerLM):
                 yield top_ids
                 out_tokens.append(top_ids)
                 lm_input = self.speech_embedding.weight[top_ids].reshape(1, 1, -1)
-                print("len out_tokens",len(out_tokens))
+                
 
     @torch.inference_mode()
     def inference_bistream(

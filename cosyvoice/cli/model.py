@@ -349,9 +349,10 @@ class CosyVoice2Model(CosyVoiceModel):
         
         mu,  spks, cond = self.flow_encoder_onnx(token_embedding,  prompt_feat, embedding, token_len, finalize)
 
-        mask = self.flow.get_buffer(f"mask_{mu.shape[2]}").to(mu)
-        mask = mask.unsqueeze(1)
-
+        # mask = self.flow.get_buffer(f"mask_{mu.shape[2]}").to(mu)
+        # mask = mask.unsqueeze(1)
+        # print("mask",mask)
+        mask = torch.ones((mu.shape[2]),  device=mu.device).unsqueeze(0).unsqueeze(0)
         feat = self.flow_decoder_onnx(mu, mask, spks, cond)
         mel_len1, mel_len2 = prompt_feat.shape[1], mu.shape[2] - prompt_feat.shape[1]
 
@@ -424,7 +425,7 @@ class CosyVoice2Model(CosyVoiceModel):
 
         # I am storing this because I can later plot it by putting a debugger here and saving it to a file
         # Or in future might add like a return_all_steps flag
-        sol = []
+        # sol = []
 
         # Do not use concat, it may cause memory format changed and trt infer with wrong results!
         # x_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
@@ -464,11 +465,14 @@ class CosyVoice2Model(CosyVoiceModel):
             dphi_dt = ((1.0 + self.flow.decoder.inference_cfg_rate) * dphi_dt - self.flow.decoder.inference_cfg_rate * cfg_dphi_dt)
             x = x + dt * dphi_dt
             t = t + dt
-            sol.append(x)
+            # sol.append(x)
             if step < len(t_span) - 1:
                 dt = t_span[step + 1] - t
+            else:
+                sol = x
 
-        return sol[-1].float()
+        # return sol[-1].float()
+        return sol.float()
 
     def flow_decoder_onnx(self, mu, mask, spks, cond, n_timesteps=10, temperature=1.0):
 
@@ -607,7 +611,7 @@ class CosyVoice2Model(CosyVoiceModel):
             else:
                 tts_speech, tts_source = self.hift_onnx(tts_mel, hift_cache_source)
             tts_speech = tts_speech[:, neg_offset*480:]
-            tts_source = tts_source[:,:, neg_offset*480:]
+            # tts_source = tts_source[:,:, neg_offset*480:]
             print("tts_speech",tts_speech.shape)
             
             if self.hift_cache_dict[uuid] is not None:
@@ -647,6 +651,8 @@ class CosyVoice2Model(CosyVoiceModel):
             prompt_token_align_len = (prompt_token_len//self.token_hop_len) * self.token_hop_len
             flow_prompt_speech_token = flow_prompt_speech_token[:, 0:prompt_token_align_len]
             prompt_speech_feat = prompt_speech_feat[:, 0:prompt_token_align_len*2]
+            print("prompt_token_align_len",prompt_token_align_len)
+            print("prompt_speech_feat",prompt_speech_feat.shape)
             print("flow_prompt_speech_token.shape",flow_prompt_speech_token.shape)
 
             prompt_token_pad = int(np.ceil(flow_prompt_speech_token.shape[1] / self.token_hop_len) * self.token_hop_len - flow_prompt_speech_token.shape[1])
@@ -657,6 +663,8 @@ class CosyVoice2Model(CosyVoiceModel):
                 if len(self.tts_speech_token_dict[this_uuid]) - token_offset >= this_token_hop_len + self.flow.pre_lookahead_len:
                     # this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid][:token_offset + this_token_hop_len + self.flow.pre_lookahead_len]).unsqueeze(dim=0)
                     start = token_offset -  min( token_offset // self.token_hop_len, self.max_infer_chunk_num-1) * self.token_hop_len
+                    end = token_offset + this_token_hop_len + self.flow.pre_lookahead_len
+                    print("start ,end:",start, end)
                     this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid][ start : token_offset + this_token_hop_len + self.flow.pre_lookahead_len]).unsqueeze(dim=0)
                     this_tts_speech = self.token2wav(token=this_tts_speech_token,
                                                      prompt_token=flow_prompt_speech_token,

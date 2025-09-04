@@ -256,7 +256,7 @@ class Qwen2LM_AXInfer(AxLMInfer):
             logp = self.llm_decoder({"x":y_pred[:, -1].astype(np.float32)})[0]
             # logp = log_softmax(logp, axis=-1)
             logp = torch.from_numpy(logp)
-            logp = logp.log_softmax(dim=-1)
+            # logp = logp.log_softmax(dim=-1)
             top_ids = self.sampling_ids(logp.squeeze(dim=0), out_tokens, sampling, ignore_eos=True if i < min_len else False).item()
             if top_ids == self.speech_token_size:
                 break
