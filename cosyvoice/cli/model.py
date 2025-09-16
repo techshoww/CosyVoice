@@ -314,8 +314,12 @@ class CosyVoice2Model(CosyVoiceModel):
             self.flow_estimator_250 = AxModelInfer("token2wav-axmodels/flow_estimator_250.axmodel")
             self.flow_estimator_300 = AxModelInfer("token2wav-axmodels/flow_estimator_300.axmodel")
 
-            self.hift_50_first = AxModelInfer("token2wav-axmodels/hift_50_first.axmodel")
-            self.hift_58 = AxModelInfer("token2wav-axmodels/hift_58.axmodel")
+            # self.hift_50_first = AxModelInfer("token2wav-axmodels/hift_50_first.axmodel")
+            # self.hift_58 = AxModelInfer("token2wav-axmodels/hift_58.axmodel")
+            self.hift_50_first_p1 = AxModelInfer("hift_p1_50_first.onnx")
+            self.hift_50_first_p2 = AxModelInfer("token2wav-axmodels/hift_p2_50_first.axmodel")
+            self.hift_58_p1 = AxModelInfer("hift_p1_58.onnx")
+            self.hift_58_p2 = AxModelInfer("token2wav-axmodels/hift_p2_58.axmodel")
 
 
     def load(self, llm_model, flow_model, hift_model):
@@ -488,21 +492,40 @@ class CosyVoice2Model(CosyVoiceModel):
 
         if cache_source.shape[2] == 0:
             if mel_len == 50:
-                sess_hift = self.hift_50_first
+                # sess_hift = self.hift_50_first
+                sess_hift_p1 = self.hift_50_first_p1
+                sess_hift_p2 = self.hift_50_first_p2
             else:
                 raise NotImplementedError 
         else:
             if mel_len == 58:
-                sess_hift = self.hift_58
+                # sess_hift = self.hift_58
+                sess_hift_p1 = self.hift_58_p1
+                sess_hift_p2 = self.hift_58_p2
             else:
                 raise NotImplementedError 
        
+        # if cache_source.shape[2] == 0:
+        #     inputs = {"mel":tts_mel.cpu().numpy()}
+        # else:
+        #     inputs = {"mel":tts_mel.cpu().numpy(),
+        #                 "hift_cache_source":cache_source.cpu().numpy()}
+        # tts_speech, tts_source = sess_hift.run(None, inputs)
+
+        t1 = time.time()
+        inputs = {"mel":tts_mel.cpu().numpy()}
+        s = sess_hift_p1.run(None, inputs)[0]
+        t2 = time.time()
+        print(f"hift part1 use time:{t2-t1} s", )
+
         if cache_source.shape[2] == 0:
-            inputs = {"mel":tts_mel.cpu().numpy()}
+            inputs = {"mel":tts_mel.cpu().numpy(), "s":s}
         else:
-            inputs = {"mel":tts_mel.cpu().numpy(),
+            inputs = {"mel":tts_mel.cpu().numpy(), "s":s,
                         "hift_cache_source":cache_source.cpu().numpy()}
-        tts_speech, tts_source = sess_hift.run(None, inputs)
+            
+        tts_speech, tts_source = sess_hift_p2.run(None, inputs)
+
         tts_speech = torch.from_numpy(tts_speech).to(tts_mel.device)
         tts_source = torch.from_numpy(tts_source).to(tts_mel.device)
 

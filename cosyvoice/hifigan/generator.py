@@ -282,14 +282,16 @@ class SineGen2(torch.nn.Module):
             # phase = torch.nn.functional.interpolate(phase.transpose(1, 2) * self.upsample_scale,
             #                                         scale_factor=self.upsample_scale, mode="linear").transpose(1, 2)
             # sines = torch.sin(phase)
-
+            print("rad_values",rad_values.reshape(-1).min(), rad_values.reshape(-1).max(), rad_values.reshape(-1).mean(), rad_values.reshape(-1).std())
             rad_values = torch.nn.functional.interpolate(rad_values.transpose(1, 2),
                                                          scale_factor=1 / self.upsample_scale,
                                                          mode="linear")
 
             phase = torch.cumsum(rad_values, dim=-1) * (2 * np.pi * self.upsample_scale)
+            print("phase 291", phase.reshape(-1).min(), phase.reshape(-1).max(), phase.reshape(-1).mean(), phase.reshape(-1).std())
             phase = torch.nn.functional.interpolate(phase ,
                                                     scale_factor=self.upsample_scale, mode="linear")
+            print("phase 294", phase.reshape(-1).min(), phase.reshape(-1).max(), phase.reshape(-1).mean(), phase.reshape(-1).std())
             phase = phase.transpose(1, 2)
             sines = torch.sin(phase)
         else:
@@ -633,8 +635,30 @@ class HiFTGenerator(nn.Module):
         generated_speech = self.decode(x=speech_feat, s=s)
         return generated_speech, f0
 
+    # @torch.inference_mode()
+    # def inference(self, speech_feat: torch.Tensor, cache_source: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
+    #     if eval(os.getenv("save_calib", "False")):
+    #         torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}.pth")
+    #     # mel->f0
+    #     f0 = self.f0_predictor(speech_feat)
+    #     # f0->source
+    #     s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+    #     s, _, _ = self.m_source(s)
+    #     s = s.transpose(1, 2)
+    #     # use cache_source to avoid glitch
+    #     print("s",s.shape)
+    #     print("cache_source",cache_source.shape)
+    #     if cache_source.shape[2] != 0:
+    #         if eval(os.getenv("save_calib", "False")):
+    #             torch.save(cache_source, "hift_cache_source.pth")
+    #         # s[:, :, :cache_source.shape[2]] = cache_source
+    #         s = torch.cat([ cache_source, s[:, :, cache_source.shape[2]:] ], dim=2)
+    #     generated_speech = self.decode(x=speech_feat, s=s)
+    #     return generated_speech, s
+
+
     @torch.inference_mode()
-    def inference(self, speech_feat: torch.Tensor, cache_source: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
+    def inference_part1(self, speech_feat: torch.Tensor) -> torch.Tensor:
         if eval(os.getenv("save_calib", "False")):
             torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}.pth")
         # mel->f0
@@ -643,6 +667,13 @@ class HiFTGenerator(nn.Module):
         s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
         s, _, _ = self.m_source(s)
         s = s.transpose(1, 2)
+        return s 
+    
+
+    @torch.inference_mode()
+    def inference_part2(self, speech_feat: torch.Tensor, s: torch.Tensor, cache_source: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(s, f"s_{s.shape[2]}.pth")
         # use cache_source to avoid glitch
         print("s",s.shape)
         print("cache_source",cache_source.shape)
@@ -653,3 +684,9 @@ class HiFTGenerator(nn.Module):
             s = torch.cat([ cache_source, s[:, :, cache_source.shape[2]:] ], dim=2)
         generated_speech = self.decode(x=speech_feat, s=s)
         return generated_speech, s
+    
+    @torch.inference_mode()
+    def inference(self, speech_feat: torch.Tensor, cache_source: torch.Tensor = torch.zeros(1, 1, 0)) -> torch.Tensor:
+        s = self.inference_part1(speech_feat)
+        # use cache_source to avoid glitch
+        return self.inference_part2(speech_feat, s, cache_source)

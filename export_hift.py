@@ -40,7 +40,7 @@ cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 hift = cosyvoice.model.hift 
-hift.forward = hift.inference
+
 
 # first = True 
 # mel_len =  50
@@ -57,12 +57,27 @@ if not first:
 else:
     hift_cache_source = torch.zeros(1, 1, 0).to(device)
 
-inputs = (mel, hift_cache_source)
-input_names = ["mel", "hift_cache_source"]
-output_names = ["audio"]
+inputs = (mel,)
+input_names = ["mel"]
+output_names = ["s"]
 if not first:
-    onnx_output = f"hift_{mel_len}.onnx"
+    onnx_output_p1 = f"hift_p1_{mel_len}.onnx"
+    onnx_output_p2 = f"hift_p2_{mel_len}.onnx"
 else:
-    onnx_output = f"hift_{mel_len}_first.onnx"
+    onnx_output_p1 = f"hift_p1_{mel_len}_first.onnx"
+    onnx_output_p2 = f"hift_p2_{mel_len}_first.onnx"
 
-export_onnx(hift, inputs, input_names, output_names, onnx_output)
+
+hift.forward = hift.inference_part1
+
+export_onnx(hift, inputs, input_names, output_names, onnx_output_p1)
+
+
+s = torch.ones(1,1, 480*mel_len, dtype=torch.float32).to(device)
+
+inputs = (mel, s, hift_cache_source)
+input_names = ["mel", "s", "hift_cache_source"]
+output_names = ["audio"]
+
+hift.forward = hift.inference_part2
+export_onnx(hift, inputs, input_names, output_names, onnx_output_p2)
