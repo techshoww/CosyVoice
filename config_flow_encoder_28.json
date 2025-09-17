@@ -21,7 +21,7 @@
     ],
     "calibration_method": "MinMax",
     "precision_analysis": true,
-    "precision_analysis_method": "EndToEnd",
+    "precision_analysis_method": "PerLayer",
     "precision_analysis_mode": "NPUBackend",
     "conv_bias_data_type": "FP32",
     "enable_smooth_quant": false,
@@ -39,7 +39,11 @@
       {
         "op_type": "Softmax",
           "data_type": "FP32"
-        }
+      },
+      {
+        "layer_name": "/encoder/pre_lookahead_layer/Concat", 
+        "data_type": "FP32"
+      },
     ]
   },
 

@@ -4,18 +4,13 @@
   "quant": {
     "input_configs": [
       {
-        "tensor_name": "token_embedding",
-        "calibration_dataset": "token_embedding_128.tar",
+        "tensor_name": "mel",
+        "calibration_dataset": "speech_feat_50.tar",
         "calibration_format": "Numpy"
       },
       {
-        "tensor_name": "prompt_feat",
-        "calibration_dataset": "prompt_feat_150.tar",
-        "calibration_format": "Numpy"
-      },
-      {
-        "tensor_name": "embedding",
-        "calibration_dataset": "embedding.tar",
+        "tensor_name": "s",
+        "calibration_dataset": "s_24000.tar",
         "calibration_format": "Numpy"
       }
     ],
@@ -32,18 +27,18 @@
         "end_tensor_names": ["DEFAULT"], 
         "data_type": "U16"
       },
-      {
-          "op_type": "Where",
-        "data_type": "FP32"
-      },
-      {
-        "op_type": "Softmax",
-          "data_type": "FP32"
-      },
-      {
-      "layer_name": "/encoder/pre_lookahead_layer/Concat", 
-      "data_type": "FP32"
-      },
+      // {
+      //   "layer_name": "/m_source/l_sin_gen/Resize_1", 
+      //   "data_type": "FP32"
+      // },
+      // {
+      //   "layer_name": "/m_source/l_sin_gen/Transpose_1", 
+      //   "data_type": "FP32"
+      // },
+      // {
+      //   "layer_name": "/m_source/l_sin_gen/Sin", 
+      //   "data_type": "FP32"
+      // },
     ]
   },
 

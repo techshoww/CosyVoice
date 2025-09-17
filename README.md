@@ -65,6 +65,10 @@ python  export_llm_decoder.py
 ```bash
 python extract_embedding.py
 ```
+5. 生成token2wav初始化数据  
+```
+python gen_init_data.py
+```
 
 ### 四、转换模型（onnx -> axmodel）  
 **先切换到AX650工具链环境下** 
@@ -74,6 +78,12 @@ bash build_flow.sh
 ```
 将转换好的axmodel模型复制到当前目录下  
 2. 转换 hift  
+(1). 将 hift的前半段 part1 转换为MNN模型  
+前半段 SineGen2 的_f02sine 量化误差较大，使用float模型在cpu上推理  
+```
+bash onnx2mnn.sh
+```
+(2). 将 hift的后半段 part2 转换为axmodel模型  
 ```bash
 bash build_hift.sh
 ```
@@ -96,6 +106,10 @@ build-output-hift_50_first-0826/hift_50_first.axmodel \
 build-output-hift_58-0826/hift_58.axmodel \
 flow.input_embedding.float16.bin  \
 flow.input_embedding.npy \
+hift_p1_50_first.mnn \
+hift_p1_58.mnn \
+rand_noise_1_80_300.txt \
+speech_window_2x8x480.txt \
 token2wav-axmodels
 ```
 
