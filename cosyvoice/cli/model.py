@@ -250,9 +250,11 @@ class CosyVoice2Model(CosyVoiceModel):
         self.infer_axmodel = eval(os.getenv("infer_axmodel", "False"))
         self.infer_onnx = eval(os.getenv("infer_onnx", "False"))
         self.export_onnx = eval(os.getenv("export_onnx", "False"))
+        self.infer_axsim = eval(os.getenv("infer_axsim", "False"))
 
         assert not (self.infer_axmodel and self.infer_onnx)
         assert not (self.infer_axmodel and self.export_onnx)
+        assert not (self.infer_axsim and self.export_onnx)
         assert not (self.infer_onnx and self.export_onnx)
 
         if self.infer_axmodel:
@@ -263,6 +265,10 @@ class CosyVoice2Model(CosyVoiceModel):
                 "pretrained_models/CosyVoice2-0.5B/CosyVoice-BlankEN", trust_remote_code=True
             )
             self.llm = Qwen2LM_AXInfer(cfg, "CosyVoice-BlankEN-Ax650-prefill_512", "qwen2", prefill_len=512, lastN=1023, chunk_len=128)
+        elif self.infer_axsim:
+            sys.path.append("npu_infer")
+            from simulator import AxSimSession
+            self.llm = llm
         else:
             self.llm = llm
         self.flow = flow
@@ -296,13 +302,26 @@ class CosyVoice2Model(CosyVoiceModel):
 
         if self.infer_onnx:
             self.flow_input_embed = np.load("flow.input_embedding.npy")
-            self.flow_28 = ort.InferenceSession("flow_28.onnx")
-            self.flow_53 = ort.InferenceSession("flow_53.onnx")
-            self.flow_78 = ort.InferenceSession("flow_78.onnx")
-            self.flow_50_final = ort.InferenceSession("flow_50_final.onnx")
+            # self.flow_28 = ort.InferenceSession("flow_28.onnx")
+            # self.flow_53 = ort.InferenceSession("flow_53.onnx")
+            # self.flow_78 = ort.InferenceSession("flow_78.onnx")
+            # self.flow_50_final = ort.InferenceSession("flow_50_final.onnx")
 
-            self.hift_50_first = ort.InferenceSession("hift_50_first.onnx")
-            self.hift_58 = ort.InferenceSession("hift_58.onnx")
+            # self.hift_50_first = ort.InferenceSession("hift_50_first.onnx")
+            # self.hift_58 = ort.InferenceSession("hift_58.onnx")
+            self.flow_encoder_28 = ort.InferenceSession("flow_encoder_28.onnx")
+            self.flow_encoder_53 = ort.InferenceSession("flow_encoder_53.onnx")
+            self.flow_encoder_78 = ort.InferenceSession("flow_encoder_78.onnx")
+            self.flow_encoder_50_final = ort.InferenceSession("flow_encoder_50_final.onnx")
+
+            self.flow_estimator_200 = ort.InferenceSession("flow_estimator_200.onnx")
+            self.flow_estimator_250 = ort.InferenceSession("flow_estimator_250.onnx")
+            self.flow_estimator_300 = ort.InferenceSession("flow_estimator_300.onnx")
+
+            self.hift_50_first_p1 = ort.InferenceSession("hift_p1_50_first.onnx")
+            self.hift_50_first_p2 = ort.InferenceSession("hift_p2_50_first.onnx")
+            self.hift_58_p1 = ort.InferenceSession("hift_p1_58.onnx")
+            self.hift_58_p2 = ort.InferenceSession("hift_p2_58.onnx")
         elif self.infer_axmodel:
             self.flow_input_embed = np.load("token2wav-axmodels/flow.input_embedding.npy")
             self.flow_encoder_28 = AxModelInfer("token2wav-axmodels/flow_encoder_28.axmodel")
@@ -321,9 +340,30 @@ class CosyVoice2Model(CosyVoiceModel):
             self.hift_58_p1 = AxModelInfer("hift_p1_58.onnx")
             self.hift_58_p2 = AxModelInfer("token2wav-axmodels/hift_p2_58.axmodel")
 
+        elif self.infer_axsim:
+            self.flow_input_embed = np.load("token2wav-axmodels/flow.input_embedding.npy")
+            self.flow_encoder_28 = AxSimSession("build-output-flow_encoder_28-0825/quant/quant_axmodel.onnx")
+            # self.flow_encoder_28 = ort.InferenceSession("flow_encoder_28.onnx")
+            self.flow_encoder_53 = AxSimSession("build-output-flow_encoder_53-0825/quant/quant_axmodel.onnx")
+            # self.flow_encoder_53 = ort.InferenceSession("flow_encoder_53.onnx")
+            self.flow_encoder_78 = AxSimSession("build-output-flow_encoder_78-0825/quant/quant_axmodel.onnx")
+            # self.flow_encoder_78 = ort.InferenceSession("flow_encoder_78.onnx")
+            self.flow_encoder_50_final = AxSimSession("build-output-flow_encoder_50_final-0825/quant/quant_axmodel.onnx")
+            # self.flow_encoder_50_final = ort.InferenceSession("flow_encoder_50_final.onnx")
+
+            self.flow_estimator_200 = AxSimSession("build-output-estimator-200/quant/quant_axmodel.onnx")
+            self.flow_estimator_250 = AxSimSession("build-output-estimator-250/quant/quant_axmodel.onnx")
+            self.flow_estimator_300 = AxSimSession("build-output-estimator-300/quant/quant_axmodel.onnx")
+
+            # self.hift_50_first = AxModelInfer("token2wav-axmodels/hift_50_first.axmodel")
+            # self.hift_58 = AxModelInfer("token2wav-axmodels/hift_58.axmodel")
+            self.hift_50_first_p1 = ort.InferenceSession("hift_p1_50_first.onnx")
+            self.hift_50_first_p2 = AxSimSession("build-output-hift_p2_50_first-0916/quant/quant_axmodel.onnx")
+            self.hift_58_p1 = ort.InferenceSession("hift_p1_58.onnx")
+            self.hift_58_p2 = AxSimSession("build-output-hift_p2_58-0916/quant/quant_axmodel.onnx")
 
     def load(self, llm_model, flow_model, hift_model):
-        if not self.infer_onnx and not self.infer_axmodel:
+        if not self.infer_axmodel:
             self.llm.load_state_dict(torch.load(llm_model, map_location=self.device), strict=True)
             self.llm.to(self.device).eval()
         self.flow.load_state_dict(torch.load(flow_model, map_location=self.device), strict=False)
@@ -551,7 +591,7 @@ class CosyVoice2Model(CosyVoiceModel):
 
     def token2wav(self, token, prompt_token, prompt_feat, embedding, token_offset, uuid, stream=False, finalize=False, speed=1.0):
         t1 = time.time()
-        if self.infer_onnx or self.infer_axmodel:
+        if self.infer_onnx or self.infer_axmodel or self.infer_axsim:
             token_embedding = torch.concat([prompt_token.to(self.device), token.to(self.device)], dim=1) 
             # token_embedding = self.flow.input_embedding(token_embedding)
             token_embedding = self.flow_embed_tokens(token_embedding.detach().cpu().numpy())
@@ -565,7 +605,7 @@ class CosyVoice2Model(CosyVoiceModel):
                 print("token,min,max",token.min(), token.max())
                 print("prompt_token,min,max",prompt_token.min(), prompt_token.max())
 
-                if not self.export_onnx and not self.infer_onnx and not self.infer_axmodel:
+                if not self.export_onnx and not self.infer_onnx and not self.infer_axmodel and not self.infer_axsim:
                     tts_mel, _ = self.flow.inference(token=token.to(self.device),
                                                     token_len=torch.tensor([token.shape[1]], dtype=torch.int32).to(self.device),
                                                     prompt_token=prompt_token.to(self.device),
@@ -614,7 +654,7 @@ class CosyVoice2Model(CosyVoiceModel):
         print("318 tts_mel.shape",tts_mel.shape)
         t1 = time.time()
         if finalize is False:
-            if not (self.infer_onnx or self.infer_axmodel):
+            if not (self.infer_onnx or self.infer_axmodel or self.infer_axsim):
                 tts_speech, tts_source = self.hift.inference(speech_feat=tts_mel, cache_source=hift_cache_source)
             else:
                 tts_speech, tts_source = self.hift_onnx(tts_mel, hift_cache_source)
@@ -629,7 +669,7 @@ class CosyVoice2Model(CosyVoiceModel):
             if speed != 1.0:
                 assert self.hift_cache_dict[uuid] is None, 'speed change only support non-stream inference mode'
                 tts_mel = F.interpolate(tts_mel, size=int(tts_mel.shape[2] / speed), mode='linear')
-            if not (self.infer_onnx or self.infer_axmodel):
+            if not (self.infer_onnx or self.infer_axmodel or self.infer_axsim):
                 tts_speech, tts_source = self.hift.inference(speech_feat=tts_mel, cache_source=hift_cache_source)
             else:
                 tts_speech, tts_source = self.hift_onnx(tts_mel, hift_cache_source)
