@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """HIFI-GAN"""
-
+import os 
 from typing import Dict, Optional, List
 import numpy as np
 from scipy.signal import get_window
@@ -32,7 +32,7 @@ from cosyvoice.transformer.convolution import CausalConv1d, CausalConv1dDownSamp
 from cosyvoice.transformer.activation import Snake
 from cosyvoice.utils.common import get_padding
 from cosyvoice.utils.common import init_weights
-
+from cosyvoice.hifigan.stft import STFTISTFTReplacerManualFFT
 
 """hifigan based generator implementation.
 
@@ -668,9 +668,21 @@ class CausalHiFTGenerator(HiFTGenerator):
         self.stft_window = torch.from_numpy(get_window("hann", istft_params["n_fft"], fftbins=True).astype(np.float32))
         self.conv_pre_look_right = conv_pre_look_right
         self.f0_predictor = f0_predictor
+        max_frames = [5161, 11161, 17161, 12001]
+        self.manulfft_map = {}
+        for frames in max_frames:
+            self.manulfft_map[frames] = STFTISTFTReplacerManualFFT(frames, istft_params["n_fft"], istft_params["hop_len"], istft_params["n_fft"], self.stft_window)
+      
 
     def decode(self, x: torch.Tensor, s: torch.Tensor = torch.zeros(1, 1, 0), finalize: bool = True) -> torch.Tensor:
-        s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
+        # s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
+        # print("s_stft_real",s_stft_real.shape)
+        # print("s_stft_imag",s_stft_imag.shape)
+        # print("decode: x.shape, s.shape",x.shape, s.shape)
+        # print("finalize",finalize)
+        s_stft_real, s_stft_imag = self.manulfft_map[5161]._stft(s)
+        # print("s_stft_real",s_stft_real.shape)
+        # print("s_stft_imag",s_stft_imag.shape)
         if finalize is True:
             x = self.conv_pre(x)
         else:
@@ -704,28 +716,88 @@ class CausalHiFTGenerator(HiFTGenerator):
         magnitude = torch.exp(x[:, :self.istft_params["n_fft"] // 2 + 1, :])
         phase = torch.sin(x[:, self.istft_params["n_fft"] // 2 + 1:, :])  # actually, sin is redundancy
 
-        x = self._istft(magnitude, phase)
+        print("magnitude",magnitude.shape)
+        print("phase",phase.shape)
+        max_frames = magnitude.shape[2]
+        # x = self._istft(magnitude, phase)
+        max_frames = max_frames.item() if isinstance(max_frames, torch.Tensor) else max_frames
+        x = self.manulfft_map[max_frames]._istft(magnitude, phase)
         if finalize is False:
             x = x[:, :-int(np.prod(self.upsample_rates) * self.istft_params['hop_len'])]
         x = torch.clamp(x, -self.audio_limit, self.audio_limit)
         return x
 
+    # @torch.inference_mode()
+    # def inference(self, speech_feat: torch.Tensor, finalize: bool = True) -> torch.Tensor:
+    #     # mel->f0 NOTE f0_predictor precision is crucial for causal inference, move self.f0_predictor to cpu if necessary
+    #     self.f0_predictor.to('cpu')
+    #     f0 = self.f0_predictor(speech_feat.cpu(), finalize=finalize).to(speech_feat)
+    #     # f0->source
+    #     s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+    #     s, _, _ = self.m_source(s)
+    #     s = s.transpose(1, 2)
+    #     if finalize is True:
+    #         generated_speech = self.decode(x=speech_feat, s=s, finalize=finalize)
+    #     else:
+    #         generated_speech = self.decode(x=speech_feat[:, :, :-self.f0_predictor.condnet[0].causal_padding], s=s, finalize=finalize)
+    #     return generated_speech, s
+
     @torch.inference_mode()
-    def inference(self, speech_feat: torch.Tensor, finalize: bool = True) -> torch.Tensor:
+    def inference_part1(self, speech_feat: torch.Tensor ) -> torch.Tensor:
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}.pth")
+
         # mel->f0 NOTE f0_predictor precision is crucial for causal inference, move self.f0_predictor to cpu if necessary
         self.f0_predictor.to('cpu')
-        f0 = self.f0_predictor(speech_feat.cpu(), finalize=finalize).to(speech_feat)
+        f0 = self.f0_predictor(speech_feat.cpu(), finalize=False).to(speech_feat)
         # f0->source
         s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
         s, _, _ = self.m_source(s)
         s = s.transpose(1, 2)
-        if finalize is True:
-            generated_speech = self.decode(x=speech_feat, s=s, finalize=finalize)
-        else:
-            generated_speech = self.decode(x=speech_feat[:, :, :-self.f0_predictor.condnet[0].causal_padding], s=s, finalize=finalize)
+
+        return s 
+
+    @torch.inference_mode()
+    def inference_part2(self, speech_feat: torch.Tensor, s:torch.Tensor) -> torch.Tensor:
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(s, f"s_{s.shape[2]}.pth")
+        
+        generated_speech = self.decode(x=speech_feat[:, :, :-self.f0_predictor.condnet[0].causal_padding], s=s, finalize=False)
         return generated_speech, s
 
 
+    @torch.inference_mode()
+    def inference_part1_final(self, speech_feat: torch.Tensor) -> torch.Tensor:
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}.pth")
+
+        # mel->f0 NOTE f0_predictor precision is crucial for causal inference, move self.f0_predictor to cpu if necessary
+        self.f0_predictor.to('cpu')
+        f0 = self.f0_predictor(speech_feat.cpu(), finalize=True).to(speech_feat)
+        # f0->source
+        s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+        s, _, _ = self.m_source(s)
+        s = s.transpose(1, 2)
+
+        return s 
+
+    @torch.inference_mode()
+    def inference_part2_final(self, speech_feat: torch.Tensor, s:torch.Tensor) -> torch.Tensor:
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(s, f"s_{s.shape[2]}.pth")
+
+        generated_speech = self.decode(x=speech_feat, s=s, finalize=True)
+       
+        return generated_speech, s
+    
+    @torch.inference_mode()
+    def inference(self, speech_feat: torch.Tensor, finalize: bool = True) -> torch.Tensor:
+        if not finalize:
+            s = self.inference_part1(speech_feat)
+            return self.inference_part2(speech_feat, s)
+        else:
+            s = self.inference_part1_final(speech_feat)
+            return self.inference_part2_final(speech_feat, s)
 if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False

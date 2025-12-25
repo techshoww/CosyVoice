@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import logging
 import random
 from typing import Dict, Optional
@@ -309,6 +310,12 @@ class CausalMaskedDiffWithDiT(torch.nn.Module):
         self.only_mask_loss = only_mask_loss
         self.token_mel_ratio = token_mel_ratio
 
+    def init_mask(self,):
+        for length in [103, 206, 200, 128, 256, 250, 153, 306, 300, 125, 250]:
+            mask_t = (~make_pad_mask(torch.tensor([length])))
+            self.register_buffer(f"mask_{length}", mask_t)
+            print("register buffer:",f"mask_{length}")
+
     def forward(
             self,
             batch: dict,
@@ -402,6 +409,158 @@ class CausalMaskedDiffWithDiT(torch.nn.Module):
         assert feat.shape[2] == mel_len2
         return feat.float(), None
 
+
+    @torch.inference_mode()
+    def inference_export(self,
+                  token_embedding,
+                  prompt_feat,
+                  embedding):
+        assert token.shape[0] == 1
+
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
+            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
+            torch.save(embedding, "embedding.pth")
+
+        # xvec projection
+        embedding = F.normalize(embedding, dim=1)
+        embedding = self.spk_embed_affine_layer(embedding)
+
+        # concat text and prompt_text
+        token_len = token_embedding.shape[1]
+        mask = self.get_buffer(f"mask_{token_len}").unsqueeze(-1).to(embedding)
+        token = token_embedding * mask
+
+        # text encode
+        
+        h = self.pre_lookahead_layer(token[:, :-self.pre_lookahead_len], context=token[:, -self.pre_lookahead_len:])
+        h = h.repeat_interleave(self.token_mel_ratio, dim=1)
+        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
+
+        # get conditions
+        conds = torch.zeros([1,  mel_len2, self.output_size], device=token.device).to(h.dtype)
+        conds = torch.cat([prompt_feat, conds], dim=1)
+        conds = conds.transpose(1, 2)
+
+        mask = self.get_buffer(f"mask_{mel_len1 + mel_len2}").to(h)
+        feat, _ = self.decoder(
+            mu=h.transpose(1, 2).contiguous(),
+            mask=mask.unsqueeze(1),
+            spks=embedding,
+            cond=conds,
+            n_timesteps=10,
+            streaming=True
+        )
+        feat = feat[:, :, mel_len1:]
+        assert feat.shape[2] == mel_len2
+        return feat.float(), None
+
+    @torch.inference_mode()
+    def inference_export_final(self,
+                  token_embedding,
+                  prompt_feat,
+                  embedding):
+        assert token.shape[0] == 1
+
+        if eval(os.getenv("save_calib", "False")):
+            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
+            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
+            torch.save(embedding, "embedding.pth")
+
+        # xvec projection
+        embedding = F.normalize(embedding, dim=1)
+        embedding = self.spk_embed_affine_layer(embedding)
+
+        # concat text and prompt_text
+        token_len = token_embedding.shape[1]
+        mask = self.get_buffer(f"mask_{token_len}").unsqueeze(-1).to(embedding)
+        token = token_embedding * mask
+
+        # text encode
+        
+        h = self.pre_lookahead_layer(token)
+        h = h.repeat_interleave(self.token_mel_ratio, dim=1)
+        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
+
+        # get conditions
+        conds = torch.zeros([1,  mel_len2, self.output_size], device=token.device).to(h.dtype)
+        conds = torch.cat([prompt_feat, conds], dim=1)
+        conds = conds.transpose(1, 2)
+
+        mask = self.get_buffer(f"mask_{mel_len1 + mel_len2}").to(h)
+        feat, _ = self.decoder(
+            mu=h.transpose(1, 2).contiguous(),
+            mask=mask.unsqueeze(1),
+            spks=embedding,
+            cond=conds,
+            n_timesteps=10,
+            streaming=True
+        )
+        feat = feat[:, :, mel_len1:]
+        assert feat.shape[2] == mel_len2
+        return feat.float(), None
+
+    @torch.inference_mode()
+    def export_flow_encoder(self,
+                  token_embedding,
+                  prompt_feat,
+                  embedding):
+        
+        # xvec projection
+        embedding = F.normalize(embedding, dim=1)
+        embedding = self.spk_embed_affine_layer(embedding)
+        
+        token_len = token_embedding.shape[1]
+        mask = self.get_buffer(f"mask_{token_len}").unsqueeze(-1).to(embedding)
+        token = token_embedding * mask
+
+        # text encode
+       
+        h = self.pre_lookahead_layer(token[:, :-self.pre_lookahead_len], context=token[:, -self.pre_lookahead_len:])
+        h = h.repeat_interleave(self.token_mel_ratio, dim=1)
+        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
+
+        # get conditions
+        conds = torch.zeros([1,  mel_len2, self.output_size], device=token.device).to(h.dtype)
+        conds = torch.cat([prompt_feat, conds], dim=1)
+        conds = conds.transpose(1, 2)
+
+        mu=h.transpose(1, 2).contiguous()
+        spks=embedding
+        cond=conds
+
+        return mu,  spks, cond
+
+    @torch.inference_mode()
+    def export_flow_encoder_final(self,
+                  token_embedding,
+                  prompt_feat,
+                  embedding):
+        
+        # xvec projection
+        embedding = F.normalize(embedding, dim=1)
+        embedding = self.spk_embed_affine_layer(embedding)
+
+        token_len = token_embedding.shape[1]
+        mask = self.get_buffer(f"mask_{token_len}").unsqueeze(-1).to(embedding)
+        token = token_embedding * mask
+
+        # text encode
+       
+        h = self.pre_lookahead_layer(token)
+        h = h.repeat_interleave(self.token_mel_ratio, dim=1)
+        mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
+
+        # get conditions
+        conds = torch.zeros([1,  mel_len2, self.output_size], device=token.device).to(h.dtype)
+        conds = torch.cat([prompt_feat, conds], dim=1)
+        conds = conds.transpose(1, 2)
+
+        mu=h.transpose(1, 2).contiguous()
+        spks=embedding
+        cond=conds
+
+        return mu,  spks, cond
 
 if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
