@@ -464,10 +464,14 @@ class CosyVoice3Model(CosyVoice2Model):
             self.flow_estimator_250 = ort.InferenceSession("flow_estimator_250.onnx")
             self.flow_estimator_300 = ort.InferenceSession("flow_estimator_300.onnx")
 
-            self.hift_50_first_p1 = ort.InferenceSession("hift_p1_50_first.onnx")
-            self.hift_50_first_p2 = ort.InferenceSession("hift_p2_50_first.onnx")
-            self.hift_58_p1 = ort.InferenceSession("hift_p1_58.onnx")
-            self.hift_58_p2 = ort.InferenceSession("hift_p2_58.onnx")
+            self.hift_p1_50 = ort.InferenceSession("hift_p1_50.onnx")
+            self.hift_p2_50 = ort.InferenceSession("hift_p2_50.onnx")
+            self.hift_p1_100 = ort.InferenceSession("hift_p1_100.onnx")
+            self.hift_p2_100 = ort.InferenceSession("hift_p2_100.onnx")
+            self.hift_p1_150 = ort.InferenceSession("hift_p1_150.onnx")
+            self.hift_p2_150 = ort.InferenceSession("hift_p2_150.onnx")
+            self.hift_p1_final_100 = ort.InferenceSession("hift_p1_100_final.onnx")
+            self.hift_p2_final_100 = ort.InferenceSession("hift_p2_100_final.onnx")
         elif self.infer_axmodel:
             self.flow_input_embed = np.load("token2wav-axmodels/flow.input_embedding.npy")
             self.flow_encoder_28 = AxModelInfer("token2wav-axmodels/flow_encoder_28.axmodel")
@@ -481,13 +485,17 @@ class CosyVoice3Model(CosyVoice2Model):
 
             # self.hift_50_first = AxModelInfer("token2wav-axmodels/hift_50_first.axmodel")
             # self.hift_58 = AxModelInfer("token2wav-axmodels/hift_58.axmodel")
-            self.hift_50_first_p1 = AxModelInfer("hift_p1_50_first.onnx")
-            self.hift_50_first_p2 = AxModelInfer("token2wav-axmodels/hift_p2_50_first.axmodel")
-            self.hift_58_p1 = AxModelInfer("hift_p1_58.onnx")
-            self.hift_58_p2 = AxModelInfer("token2wav-axmodels/hift_p2_58.axmodel")
+            self.hift_p1_50 = AxModelInfer("hift_p1_50_first.onnx")
+            self.hift_p2_50 = AxModelInfer("token2wav-axmodels/hift_p2_50_first.axmodel")
+            self.hift_p1_100 = AxModelInfer("hift_p1_58.onnx")
+            self.hift_p2_100 = AxModelInfer("token2wav-axmodels/hift_p2_58.axmodel")
+            # self.hift_p1_150 = 
+            # self.hift_p2_150 = 
+            # self.hift_p1_final_100 = 
+            # self.hift_p2_final_100 = 
 
     def load(self, llm_model, flow_model, hift_model):
-        if not self.infer_onnx and not self.infer_axmodel:
+        if not self.infer_axmodel:
             self.llm.load_state_dict(torch.load(llm_model, map_location=self.device), strict=True)
             self.llm.to(self.device).eval()
         self.flow.load_state_dict(torch.load(flow_model, map_location=self.device), strict=False)
@@ -635,49 +643,37 @@ class CosyVoice3Model(CosyVoice2Model):
             t_span = 1 - torch.cos(t_span * 0.5 * torch.pi)
         return self.flow_decoder_solve_euler(z, t_span=t_span, mu=mu, mask=mask, spks=spks, cond=cond)
 
-    def hift_onnx(self, tts_mel, cache_source):
+    def hift_onnx(self, tts_mel, final):
         mel_len = tts_mel.shape[2]
 
-        if cache_source.shape[2] == 0:
-            if mel_len == 50:
-                # sess_hift = self.hift_50_first
-                sess_hift_p1 = self.hift_50_first_p1
-                sess_hift_p2 = self.hift_50_first_p2
-            else:
-                raise NotImplementedError 
+        if final and mel_len == 100:
+            sess_hift_p1 = self.hift_p1_final_100
+            sess_hift_p2 = self.hift_p2_final_100
+        elif mel_len == 50:
+            sess_hift_p1 = self.hift_p1_50
+            sess_hift_p2 = self.hift_p2_50
+        elif mel_len == 100:
+            sess_hift_p1 = self.hift_p1_100
+            sess_hift_p2 = self.hift_p2_100
+        elif mel_len == 150:
+            sess_hift_p1 = self.hift_p1_150
+            sess_hift_p2 = self.hift_p2_150
         else:
-            if mel_len == 58:
-                # sess_hift = self.hift_58
-                sess_hift_p1 = self.hift_58_p1
-                sess_hift_p2 = self.hift_58_p2
-            else:
-                raise NotImplementedError 
+            raise NotImplementedError
        
-        # if cache_source.shape[2] == 0:
-        #     inputs = {"mel":tts_mel.cpu().numpy()}
-        # else:
-        #     inputs = {"mel":tts_mel.cpu().numpy(),
-        #                 "hift_cache_source":cache_source.cpu().numpy()}
-        # tts_speech, tts_source = sess_hift.run(None, inputs)
-
         t1 = time.time()
         inputs = {"mel":tts_mel.cpu().numpy()}
         s = sess_hift_p1.run(None, inputs)[0]
         t2 = time.time()
         print(f"hift part1 use time:{t2-t1} s", )
 
-        if cache_source.shape[2] == 0:
-            inputs = {"mel":tts_mel.cpu().numpy(), "s":s}
-        else:
-            inputs = {"mel":tts_mel.cpu().numpy(), "s":s,
-                        "hift_cache_source":cache_source.cpu().numpy()}
+        inputs = {"mel":tts_mel.cpu().numpy(), "s":s}
             
-        tts_speech, tts_source = sess_hift_p2.run(None, inputs)
+        tts_speech = sess_hift_p2.run(None, inputs)[0]
 
         tts_speech = torch.from_numpy(tts_speech).to(tts_mel.device)
-        tts_source = torch.from_numpy(tts_source).to(tts_mel.device)
 
-        return tts_speech, tts_source
+        return tts_speech
 
     def axllm_job(self, text, prompt_text, llm_prompt_speech_token, llm_embedding, uuid):
         
@@ -735,10 +731,12 @@ class CosyVoice3Model(CosyVoice2Model):
         print("token2wav: token.shape",token.shape)
         print("token2wav: tts_mel.shape",tts_mel.shape)
         print("token2wav: token_offset", token_offset)
-       
+        
         with torch.cuda.amp.autocast(self.fp16):
-           
-            tts_speech, _ = self.hift.inference(speech_feat=tts_mel, finalize=finalize)
+            if self.infer_onnx or self.infer_axmodel:
+                tts_speech = self.hift_onnx(tts_mel, finalize)
+            else:
+                tts_speech, _ = self.hift.inference(speech_feat=tts_mel, finalize=finalize)
             
             if not finalize:
                 tts_speech = tts_speech[:, -50*480:]
