@@ -1,0 +1,61 @@
+{
+  "model_type": "ONNX",
+  "npu_mode": "NPU3",
+  "quant": {
+    "input_configs": [
+      {
+        "tensor_name": "x",
+        "calibration_dataset": "x_200_cnt50.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "mask",
+        "calibration_dataset": "mask_200_cnt50.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "mu",
+        "calibration_dataset": "mu_200_cnt50.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "t",
+        "calibration_dataset": "t_cnt430.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "spks",
+        "calibration_dataset": "spks_cnt430.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "cond",
+        "calibration_dataset": "cond_200_cnt50.tar",
+        "calibration_format": "Numpy"
+      }
+      
+    ],
+    "calibration_method": "MinMax",
+    "precision_analysis": true,
+    "precision_analysis_method": "EndToEnd",
+    "precision_analysis_mode": "NPUBackend",
+    "conv_bias_data_type": "FP32",
+    "enable_smooth_quant": false,
+	  "disable_auto_refine_scale": true,
+    "layer_configs":  [
+      {
+        "start_tensor_names": ["DEFAULT"], 
+        "end_tensor_names": ["DEFAULT"], 
+        "data_type": "U16"
+      },
+      // {
+      //   "layer_name": "/transformer_blocks.19/attn/MatMul",
+      //   "data_type": "FP32"
+      // }
+    ]
+  },
+
+  "compiler": {
+    "npu_perf": false
+  }
+}

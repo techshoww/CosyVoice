@@ -430,7 +430,7 @@ class CosyVoice3Model(CosyVoice2Model):
 
         self.infer_axmodel = eval(os.getenv("infer_axmodel", "False"))
         self.infer_onnx = eval(os.getenv("infer_onnx", "False"))
-        self.export_onnx = eval(os.getenv("export_onnx", "False"))
+        self.save_calib = eval(os.getenv("save_calib", "False"))
 
         assert not (self.infer_axmodel and self.infer_onnx)
         assert not (self.infer_axmodel and self.export_onnx)
@@ -449,7 +449,7 @@ class CosyVoice3Model(CosyVoice2Model):
 
         print("------------------------infer_axmodel",self.infer_axmodel)
         print("------------------------infer_onnx",self.infer_onnx)
-        print("------------------------export_onnx",self.export_onnx)
+        print("------------------------save_calib",self.save_calib)
         
         self.flow.init_mask()
 
@@ -483,16 +483,14 @@ class CosyVoice3Model(CosyVoice2Model):
             self.flow_estimator_250 = AxModelInfer("token2wav-axmodels/flow_estimator_250.axmodel")
             self.flow_estimator_300 = AxModelInfer("token2wav-axmodels/flow_estimator_300.axmodel")
 
-            # self.hift_50_first = AxModelInfer("token2wav-axmodels/hift_50_first.axmodel")
-            # self.hift_58 = AxModelInfer("token2wav-axmodels/hift_58.axmodel")
-            self.hift_p1_50 = AxModelInfer("hift_p1_50_first.onnx")
-            self.hift_p2_50 = AxModelInfer("token2wav-axmodels/hift_p2_50_first.axmodel")
-            self.hift_p1_100 = AxModelInfer("hift_p1_58.onnx")
-            self.hift_p2_100 = AxModelInfer("token2wav-axmodels/hift_p2_58.axmodel")
-            # self.hift_p1_150 = 
-            # self.hift_p2_150 = 
-            # self.hift_p1_final_100 = 
-            # self.hift_p2_final_100 = 
+            self.hift_p1_50 = AxModelInfer("token2wav-axmodels/hift_p1_50.axmodel")
+            self.hift_p2_50 = AxModelInfer("token2wav-axmodels/hift_p2_50.axmodel")
+            self.hift_p1_100 = AxModelInfer("token2wav-axmodels/hift_p1_100.axmodel")
+            self.hift_p2_100 = AxModelInfer("token2wav-axmodels/hift_p2_100.axmodel")
+            self.hift_p1_150 = AxModelInfer("token2wav-axmodels/hift_p1_150.axmodel")
+            self.hift_p2_150 = AxModelInfer("token2wav-axmodels/hift_p2_150.axmodel")
+            self.hift_p1_final_100 = AxModelInfer("token2wav-axmodels/hift_p1_100_final.axmodel")
+            self.hift_p2_final_100 = AxModelInfer("token2wav-axmodels/hift_p2_100_final.axmodel")
 
     def load(self, llm_model, flow_model, hift_model):
         if not self.infer_axmodel:
@@ -703,16 +701,16 @@ class CosyVoice3Model(CosyVoice2Model):
             # embedding = F.normalize(embedding.to(self.device), dim=1)
             token_len = token.shape[1]
             tts_mel = self.flow_onnx(token_embedding,  prompt_feat, embedding, token_len, finalize)
-        elif self.export_onnx:
+        elif self.save_calib:
             token_embedding = torch.concat([prompt_token.to(self.device), token.to(self.device)], dim=1) 
             token_embedding = self.flow.input_embedding(token_embedding)
             # embedding = F.normalize(embedding.to(self.device), dim=1)
             if not finalize:
-                tts_mel = self.flow.inference_export(token_embedding=token_embedding.to(self.device),
+                tts_mel, _ = self.flow.inference_export(token_embedding=token_embedding.to(self.device),
                                                 prompt_feat=prompt_feat.to(self.device),
                                                 embedding=embedding)
             else:
-                tts_mel = self.flow.inference_export_final(token_embedding=token_embedding.to(self.device),
+                tts_mel, _ = self.flow.inference_export_final(token_embedding=token_embedding.to(self.device),
                                                 prompt_feat=prompt_feat.to(self.device),
                                                 embedding=embedding.to(self.device))
         else:

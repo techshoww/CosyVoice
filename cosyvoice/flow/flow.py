@@ -415,12 +415,14 @@ class CausalMaskedDiffWithDiT(torch.nn.Module):
                   token_embedding,
                   prompt_feat,
                   embedding):
-        assert token.shape[0] == 1
+        # assert token.shape[0] == 1
 
         if eval(os.getenv("save_calib", "False")):
-            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
-            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
-            torch.save(embedding, "embedding.pth")
+            import time
+            time_str = time.time()
+            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}_time:{time_str}.pth")
+            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}_time:{time_str}.pth")
+            torch.save(embedding, f"embedding_time:{time_str}.pth")
 
         # xvec projection
         embedding = F.normalize(embedding, dim=1)
@@ -460,12 +462,14 @@ class CausalMaskedDiffWithDiT(torch.nn.Module):
                   token_embedding,
                   prompt_feat,
                   embedding):
-        assert token.shape[0] == 1
+        # assert token.shape[0] == 1
 
         if eval(os.getenv("save_calib", "False")):
-            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}.pth")
-            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}.pth")
-            torch.save(embedding, "embedding.pth")
+            import time
+            time_str = time.time()
+            torch.save(token_embedding, f"token_embedding_{token_embedding.shape[1]}_time:{time_str}.pth")
+            torch.save(prompt_feat, f"prompt_feat_{prompt_feat.shape[1]}_time:{time_str}.pth")
+            torch.save(embedding, f"embedding_time:{time_str}.pth")
 
         # xvec projection
         embedding = F.normalize(embedding, dim=1)

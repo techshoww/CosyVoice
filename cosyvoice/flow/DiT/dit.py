@@ -145,19 +145,15 @@ class DiT(nn.Module):
     def forward(self, x, mask, mu, t, spks=None, cond=None, streaming=False):
 
         if eval(os.getenv("save_calib", "False")):
-            print("x", x.shape)
-            print("mask", mask.shape)
-            print("mu", mu.shape)
-            print("t", t.shape)
-            print("spks", spks.shape)
-            print("cond", cond.shape)
+            import time
+            time_str = time.time()
 
-            torch.save(x, f"x_{x.shape[2]}.pth")
-            torch.save(mask, f"mask_{mask.shape[2]}.pth")
-            torch.save(mu, f"mu_{mu.shape[2]}.pth")
-            torch.save(t, f"t.pth")
-            torch.save(spks, f"spks.pth")
-            torch.save(cond, f"cond_{cond.shape[2]}.pth")
+            torch.save(x, f"x_{x.shape[2]}_time:{time_str}.pth")
+            torch.save(mask, f"mask_{mask.shape[2]}_time:{time_str}.pth")
+            torch.save(mu, f"mu_{mu.shape[2]}_time:{time_str}.pth")
+            torch.save(t, f"t_time:{time_str}.pth")
+            torch.save(spks, f"spks_time:{time_str}.pth")
+            torch.save(cond, f"cond_{cond.shape[2]}_time:{time_str}.pth")
 
         x = x.transpose(1, 2)
         mu = mu.transpose(1, 2)

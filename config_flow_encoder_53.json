@@ -1,0 +1,49 @@
+{
+  "model_type": "ONNX",
+  "npu_mode": "NPU3",
+  "quant": {
+    "input_configs": [
+      {
+        "tensor_name": "token_embedding",
+        "calibration_dataset": "token_embedding_128_cnt5.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "prompt_feat",
+        "calibration_dataset": "prompt_feat_150_cnt5.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "embedding",
+        "calibration_dataset": "embedding_cnt38.tar",
+        "calibration_format": "Numpy"
+      }
+    ],
+    "calibration_method": "MinMax",
+    "precision_analysis": true,
+    "precision_analysis_method": "PerLayer",
+    "precision_analysis_mode": "NPUBackend",
+    "conv_bias_data_type": "FP32",
+    "enable_smooth_quant": false,
+	  "disable_auto_refine_scale": true,
+    "layer_configs":  [
+      {
+        "start_tensor_names": ["DEFAULT"], 
+        "end_tensor_names": ["DEFAULT"], 
+        "data_type": "U16"
+      },
+      {
+          "op_type": "Where",
+        "data_type": "FP32"
+      },
+      {
+        "op_type": "Softmax",
+          "data_type": "FP32"
+      }
+    ]
+  },
+
+  "compiler": {
+    "npu_perf": false
+  }
+}

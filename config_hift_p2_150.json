@@ -1,0 +1,36 @@
+{
+  "model_type": "ONNX",
+  "npu_mode": "NPU2",
+  "quant": {
+    "input_configs": [
+      {
+        "tensor_name": "mel",
+        "calibration_dataset": "speech_feat_150_cnt28.tar",
+        "calibration_format": "Numpy"
+      },
+      {
+        "tensor_name": "s",
+        "calibration_dataset": "s_70560_cnt28.tar",
+        "calibration_format": "Numpy"
+      }
+    ],
+    "calibration_method": "MinMax",
+    "precision_analysis": true,
+    "precision_analysis_method": "PerLayer",
+    "precision_analysis_mode": "NPUBackend",
+    "conv_bias_data_type": "FP32",
+    "enable_smooth_quant": false,
+	  "disable_auto_refine_scale": true,
+    "layer_configs":  [
+      {
+        "start_tensor_names": ["DEFAULT"], 
+        "end_tensor_names": ["DEFAULT"], 
+        "data_type": "U16"
+      }
+    ]
+  },
+
+  "compiler": {
+    "npu_perf": true
+  }
+}

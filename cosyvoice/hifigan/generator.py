@@ -297,7 +297,17 @@ class SineGen2(torch.nn.Module):
         fn = torch.multiply(f0, torch.FloatTensor([[range(1, self.harmonic_num + 2)]]).to(f0.device))
 
         # generate sine waveforms
-        sine_waves = self._f02sine(fn) * self.sine_amp
+        # if (not torch.onnx.is_in_onnx_export()) or fn.shape[1]<=480*100:
+        if fn.shape[1]<=480*100:
+            sine_waves = self._f02sine(fn) * self.sine_amp
+        elif fn.shape[1] > 480 * 100 and fn.shape[1] <=480*200:
+                fn_0 = fn[:,0:48000]
+                fn_1 = fn[:, 48000:]
+                sine_waves_0 = self._f02sine(fn_0) * self.sine_amp
+                sine_waves_1 = self._f02sine(fn_1) * self.sine_amp
+                sine_waves = torch.cat([sine_waves_0, sine_waves_1], 1)
+        else:
+            raise NotImplementedError
 
         # generate uv signal
         uv = self._f02uv(f0)
@@ -664,7 +674,7 @@ class CausalHiFTGenerator(HiFTGenerator):
         self.conv_post = weight_norm(CausalConv1d(ch, istft_params["n_fft"] + 2, 7, 1, causal_type='left'))
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
-        self.reflection_pad = nn.ReflectionPad1d((1, 0))
+        self.reflection_pad = nn.ReflectionPad2d((1, 0,0,0))
         self.stft_window = torch.from_numpy(get_window("hann", istft_params["n_fft"], fftbins=True).astype(np.float32))
         self.conv_pre_look_right = conv_pre_look_right
         self.f0_predictor = f0_predictor
@@ -676,13 +686,8 @@ class CausalHiFTGenerator(HiFTGenerator):
 
     def decode(self, x: torch.Tensor, s: torch.Tensor = torch.zeros(1, 1, 0), finalize: bool = True) -> torch.Tensor:
         # s_stft_real, s_stft_imag = self._stft(s.squeeze(1))
-        # print("s_stft_real",s_stft_real.shape)
-        # print("s_stft_imag",s_stft_imag.shape)
-        # print("decode: x.shape, s.shape",x.shape, s.shape)
-        # print("finalize",finalize)
         s_stft_real, s_stft_imag = self.manulfft_map[5161]._stft(s)
-        # print("s_stft_real",s_stft_real.shape)
-        # print("s_stft_imag",s_stft_imag.shape)
+        
         if finalize is True:
             x = self.conv_pre(x)
         else:
@@ -696,7 +701,10 @@ class CausalHiFTGenerator(HiFTGenerator):
             x = self.ups[i](x)
 
             if i == self.num_upsamples - 1:
-                x = self.reflection_pad(x)
+                x = x.unsqueeze(2)
+                # x = self.reflection_pad(x)
+                x = F.pad(x, (1,0,0,0), mode="constant", value=0)
+                x = x.squeeze(2)
 
             # fusion
             si = self.source_downs[i](s_stft)
@@ -716,8 +724,6 @@ class CausalHiFTGenerator(HiFTGenerator):
         magnitude = torch.exp(x[:, :self.istft_params["n_fft"] // 2 + 1, :])
         phase = torch.sin(x[:, self.istft_params["n_fft"] // 2 + 1:, :])  # actually, sin is redundancy
 
-        print("magnitude",magnitude.shape)
-        print("phase",phase.shape)
         max_frames = magnitude.shape[2]
         # x = self._istft(magnitude, phase)
         max_frames = max_frames.item() if isinstance(max_frames, torch.Tensor) else max_frames
@@ -745,13 +751,26 @@ class CausalHiFTGenerator(HiFTGenerator):
     @torch.inference_mode()
     def inference_part1(self, speech_feat: torch.Tensor ) -> torch.Tensor:
         if eval(os.getenv("save_calib", "False")):
-            torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}.pth")
+            import time
+            time_str = time.time()
+            torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}_time:{time_str}.pth")
 
         # mel->f0 NOTE f0_predictor precision is crucial for causal inference, move self.f0_predictor to cpu if necessary
         self.f0_predictor.to('cpu')
         f0 = self.f0_predictor(speech_feat.cpu(), finalize=False).to(speech_feat)
         # f0->source
-        s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+        if f0.shape[1] <= 100:
+            s = self.f0_upsamp(f0[:, None]).transpose(1, 2)  # bs,n,t
+        elif f0.shape[1] > 100 and f0.shape[1]<=200:
+            
+            f0_0 = f0[:,0:100]
+            f0_1 = f0[:,100:]
+            s0 = self.f0_upsamp(f0_0[:, None])  # bs,t,n
+            s1 = self.f0_upsamp(f0_1[:, None])  # bs,t,n
+            s = torch.cat([s0,s1], 2).transpose(1, 2)
+        else:
+            print("f0.shape", f0.shape)
+            raise NotImplementedError
         s, _, _ = self.m_source(s)
         s = s.transpose(1, 2)
 
@@ -760,7 +779,9 @@ class CausalHiFTGenerator(HiFTGenerator):
     @torch.inference_mode()
     def inference_part2(self, speech_feat: torch.Tensor, s:torch.Tensor) -> torch.Tensor:
         if eval(os.getenv("save_calib", "False")):
-            torch.save(s, f"s_{s.shape[2]}.pth")
+            import time
+            time_str = time.time()
+            torch.save(s, f"s_{s.shape[2]}_time:{time_str}.pth")
         
         generated_speech = self.decode(x=speech_feat[:, :, :-self.f0_predictor.condnet[0].causal_padding], s=s, finalize=False)
         return generated_speech, s
@@ -769,7 +790,9 @@ class CausalHiFTGenerator(HiFTGenerator):
     @torch.inference_mode()
     def inference_part1_final(self, speech_feat: torch.Tensor) -> torch.Tensor:
         if eval(os.getenv("save_calib", "False")):
-            torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}.pth")
+            import time
+            time_str = time.time()
+            torch.save(speech_feat, f"speech_feat_{speech_feat.shape[2]}_time:{time_str}.pth")
 
         # mel->f0 NOTE f0_predictor precision is crucial for causal inference, move self.f0_predictor to cpu if necessary
         self.f0_predictor.to('cpu')
@@ -784,7 +807,9 @@ class CausalHiFTGenerator(HiFTGenerator):
     @torch.inference_mode()
     def inference_part2_final(self, speech_feat: torch.Tensor, s:torch.Tensor) -> torch.Tensor:
         if eval(os.getenv("save_calib", "False")):
-            torch.save(s, f"s_{s.shape[2]}.pth")
+            import time
+            time_str = time.time()
+            torch.save(s, f"s_{s.shape[2]}_time:{time_str}.pth")
 
         generated_speech = self.decode(x=speech_feat, s=s, finalize=True)
        
