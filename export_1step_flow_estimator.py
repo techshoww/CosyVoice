@@ -24,6 +24,8 @@ from cosyvoice.cli.cosyvoice import CosyVoice2
 
 
 DEFAULT_MODEL_DIR = SCRIPT_DIR / "pretrained_models" / "CosyVoice2-0.5B"
+
+# https://huggingface.co/Sariel00/cosyvoice2_rknn/tree/main/original/model/offline1_v3_student
 DEFAULT_STUDENT_CHECKPOINT = Path(
     "/data/tmp/yongqiang/nfs/lhj/huggingface/cosyvoice2_rknn/original/model/"
     "offline1_v3_student/checkpoint-final.pt"
